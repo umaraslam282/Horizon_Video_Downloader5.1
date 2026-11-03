@@ -1,0 +1,6 @@
+starlette>=0.40.0
+uvicorn>=0.30.0
+websockets>=13.0
+psutil>=6.0.0
+qrcode>=7.4.2
+pillow>=10.0.0

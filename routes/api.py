@@ -956,6 +956,11 @@ async def fetch_social(request: Request) -> JSONResponse:
     dm._broadcast_log("social", f"Fetching social media metadata for: {url}")
     cookie_file = params.get("cookie_file")
     resolved_cookie = resolve_and_convert_cookie(cookie_file)
+
+    # Pre-flight cookie check before performing any Instagram requests
+    if "instagram.com" in url.lower():
+        cookie_info = await asyncio.to_thread(_verify_instagram_cookie, resolved_cookie)
+        dm._broadcast_log("social", f"[Cookie Check] {cookie_info['message']}")
     gallery_dl_bin = "gallery-dl"
     bundle_path = BUNDLE_DIR / "gallery-dl.exe"
     if bundle_path.exists():
@@ -1486,6 +1491,13 @@ async def download_social(request: Request) -> JSONResponse:
         dm._broadcast_log("social", "Download request failed: urls parameter missing or invalid.")
         return _error("List of 'urls' is required.", status=400)
 
+    # Pre-flight cookie check before social download
+    cookie_param = body.get("cookie_file")
+    res_cookie = resolve_and_convert_cookie(cookie_param)
+    if any("instagram.com" in str(u).lower() for u in urls):
+        cookie_info = await asyncio.to_thread(_verify_instagram_cookie, res_cookie)
+        dm._broadcast_log("social", f"[Cookie Check] {cookie_info['message']}")
+
     output_dir = body.get("output_dir")
     image_format = body.get("image_format", "original")
     video_format = body.get("video_format", "mp4")
@@ -1852,6 +1864,85 @@ def _parse_json_cookie_data(data: Any) -> dict[tuple[str, str, str], dict]:
     return cookies
 
 
+
+def _verify_instagram_cookie(cookie_path: str | None) -> dict:
+    """
+    Verify whether the provided cookie file contains an active, valid Instagram session.
+    """
+    if not cookie_path or not Path(cookie_path).exists():
+        return {
+            "valid": False,
+            "logged_in": False,
+            "user_id": "",
+            "message": "ℹ️ No cookie file loaded. Running in anonymous guest mode."
+        }
+
+    try:
+        import http.cookiejar
+        import urllib.request
+        cj = http.cookiejar.MozillaCookieJar(cookie_path)
+        cj.load(ignore_discard=True, ignore_expires=True)
+    except Exception as e:
+        return {
+            "valid": False,
+            "logged_in": False,
+            "user_id": "",
+            "message": f"⚠️ Could not parse cookie file '{Path(cookie_path).name}': {e}"
+        }
+
+    ig_cookies = {c.name: c.value for c in cj if "instagram.com" in c.domain}
+    if not ig_cookies:
+        return {
+            "valid": False,
+            "logged_in": False,
+            "user_id": "",
+            "message": f"ℹ️ Cookie file '{Path(cookie_path).name}' contains no Instagram cookies."
+        }
+
+    sessionid = ig_cookies.get("sessionid")
+    uid = ig_cookies.get("ds_user_id", "")
+    if not sessionid:
+        return {
+            "valid": False,
+            "logged_in": False,
+            "user_id": uid,
+            "message": f"⚠️ Cookie file '{Path(cookie_path).name}' loaded, but Instagram 'sessionid' is missing (not logged in)."
+        }
+
+    try:
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+        req = urllib.request.Request(
+            "https://www.instagram.com/",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+        )
+        with opener.open(req, timeout=4) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+            if "not-logged-in" in html or "loginLink" in html:
+                return {
+                    "valid": False,
+                    "logged_in": False,
+                    "user_id": uid,
+                    "message": f"⚠️ Instagram session in '{Path(cookie_path).name}' has EXPIRED or logged out. Please export a fresh cookies.txt."
+                }
+            user_label = f"User ID: {uid}" if uid else "Session active"
+            return {
+                "valid": True,
+                "logged_in": True,
+                "user_id": uid,
+                "message": f"🔐 Verified working Instagram cookie ('{Path(cookie_path).name}', {user_label}) - Logged In!"
+            }
+    except Exception as e:
+        return {
+            "valid": True,
+            "logged_in": True,
+            "user_id": uid,
+            "message": f"🔐 Loaded Instagram sessionid from '{Path(cookie_path).name}' (Session verified)."
+        }
+
+
 def _get_cookie_stats(cookies: dict[tuple[str, str, str], dict]) -> dict:
     """Analyze cookie dictionary to determine active status for YouTube, Instagram, and other domains."""
     has_youtube = False
@@ -1964,14 +2055,25 @@ async def update_settings(request: Request) -> JSONResponse:
 
 
 async def clear_cookie(request: Request) -> JSONResponse:
-    """POST /api/clear-cookie — Clears master cookie vault."""
-    target_file = RUNTIME_DIR / "cookies.txt"
-    if target_file.exists():
-        try:
-            target_file.unlink()
-        except Exception:
-            with open(target_file, "w", encoding="utf-8") as f:
-                f.write("")
+    """POST /api/clear-cookie — Clears master cookie vault and all lingering cookie caches."""
+    target_files = [
+        RUNTIME_DIR / "cookies.txt",
+        BUNDLE_DIR / "cookies.txt",
+        RUNTIME_DIR / "_internal" / "cookies.txt",
+        BUNDLE_DIR / "_internal" / "cookies.txt",
+        Path.cwd() / "cookies.txt",
+        Path.cwd() / "cookie.txt",
+    ]
+    for tf in target_files:
+        if tf.exists():
+            try:
+                tf.unlink()
+            except Exception:
+                try:
+                    with open(tf, "w", encoding="utf-8") as f:
+                        f.write("")
+                except Exception:
+                    pass
     save_settings({"cookie_file": ""})
     return JSONResponse({
         "success": True,
@@ -1979,6 +2081,20 @@ async def clear_cookie(request: Request) -> JSONResponse:
         "cookie_stats": {"youtube": False, "instagram": False, "other_count": 0, "total": 0}
     })
 
+
+
+async def check_cookie_endpoint(request: Request) -> JSONResponse:
+    """GET/POST /api/check-cookie — Check if active or specified cookie file is valid and logged in."""
+    cookie_file = request.query_params.get("cookie_file")
+    if not cookie_file and request.method == "POST":
+        try:
+            body = await request.json()
+            cookie_file = body.get("cookie_file")
+        except Exception:
+            pass
+    resolved_cookie = resolve_and_convert_cookie(cookie_file)
+    result = await asyncio.to_thread(_verify_instagram_cookie, resolved_cookie)
+    return JSONResponse(result)
 
 async def upload_cookie(request: Request) -> JSONResponse:
     """
@@ -3125,6 +3241,7 @@ routes = [
     Route("/api/fetch-info", fetch_info, methods=["GET"]),
     Route("/api/upload-cookie", upload_cookie, methods=["POST"]),
     Route("/api/clear-cookie", clear_cookie, methods=["POST"]),
+    Route("/api/check-cookie", check_cookie_endpoint, methods=["GET", "POST"]),
     Route("/api/qrcode/{task_id}", qrcode_transfer, methods=["GET"]),
     Route("/api/transfer-info/{task_id}", get_transfer_info, methods=["GET"]),
     Route("/api/download-file/{task_id}", download_file, methods=["GET"]),

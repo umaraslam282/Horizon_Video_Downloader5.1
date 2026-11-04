@@ -46,7 +46,9 @@ icon_file = os.path.join(project_root, "icon.ico")
 if os.path.exists(icon_file):
     bundled_data.append((icon_file, "."))
 
-# Cookies excluded from installer
+cookie_file = os.path.join(project_root, "cookies.txt")
+if os.path.exists(cookie_file):
+    bundled_data.append((cookie_file, "."))
 
 # ── Analysis ─────────────────────────────────────────────────────
 a = Analysis(

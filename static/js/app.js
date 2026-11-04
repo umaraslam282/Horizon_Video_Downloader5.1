@@ -1385,6 +1385,7 @@ const App={
     });
 
     document.getElementById('update-ytdlp-btn')?.addEventListener('click',()=>this._updateYtdlp());
+    document.getElementById('update-gallerydl-btn')?.addEventListener('click',()=>this._updateGallerydl());
 
     // Save on manual changes
     document.getElementById('set-dir')?.addEventListener('input',()=>this._savePersistedSettings());
@@ -1590,6 +1591,23 @@ const App={
       out.textContent=d.output||'No output';
       out.style.display='block';
       this.toast(d.success?'yt-dlp updated':'Update failed',d.success?'ok':'err');
+    }catch{this.toast('Network error','err');}
+    finally{label.hidden=false;spin.hidden=true;btn.disabled=false;}
+  },
+
+  async _updateGallerydl(){
+    const btn=document.getElementById('update-gallerydl-btn');
+    const label=btn.querySelector('span'),spin=btn.querySelector('.btn-spinner');
+    const out=document.getElementById('update-output');
+    label.hidden=true;spin.hidden=false;btn.disabled=true;
+    out.style.display='none';
+
+    try{
+      const r=await fetch('/api/update-gallerydl',{method:'POST'});
+      const d=await r.json();
+      out.textContent=d.output||'No output';
+      out.style.display='block';
+      this.toast(d.success?'gallery-dl updated':'Update failed',d.success?'ok':'err');
     }catch{this.toast('Network error','err');}
     finally{label.hidden=false;spin.hidden=true;btn.disabled=false;}
   },

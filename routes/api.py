@@ -270,6 +270,113 @@ async def update_ytdlp(request: Request) -> JSONResponse:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
+
+
+def _run_gallerydl_update() -> dict:
+    """
+    Download the latest gallery-dl.exe from Codeberg directly to a temp file
+    and safely replace the executable on disk using Windows-safe rename patterns.
+    """
+    import urllib.request
+    import os
+    import shutil
+    import subprocess
+    from config import BUNDLE_DIR, RUNTIME_DIR
+
+    target_path = BUNDLE_DIR / "gallery-dl.exe"
+    if not target_path.exists():
+        resolved = shutil.which("gallery-dl")
+        if resolved:
+            target_path = Path(resolved)
+        else:
+            target_path = RUNTIME_DIR / "gallery-dl.exe"
+
+    tmp_path = target_path.with_suffix(".tmp")
+    old_path = target_path.with_suffix(".old")
+    url = "https://codeberg.org/mikf/gallery-dl/releases/download/v1.32.19/gallery-dl.exe"
+
+    try:
+        api_req = urllib.request.Request(
+            "https://codeberg.org/api/v1/repos/mikf/gallery-dl/releases/latest",
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        with urllib.request.urlopen(api_req, timeout=10) as resp:
+            data = json.loads(resp.read())
+            for a in data.get("assets", []):
+                if a.get("name") == "gallery-dl.exe" and a.get("browser_download_url"):
+                    url = a["browser_download_url"]
+                    break
+    except Exception:
+        pass
+
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    req = urllib.request.Request(url, headers=headers)
+
+    try:
+        logger.info(f"Downloading latest gallery-dl.exe to {tmp_path}...")
+        with urllib.request.urlopen(req, timeout=180) as response:
+            with open(tmp_path, "wb") as out_file:
+                shutil.copyfileobj(response, out_file, length=128 * 1024)
+
+        if old_path.exists():
+            try:
+                old_path.unlink()
+            except Exception:
+                pass
+
+        if target_path.exists():
+            try:
+                target_path.rename(old_path)
+            except Exception:
+                pass
+
+        shutil.move(str(tmp_path), str(target_path))
+
+        if old_path.exists():
+            try:
+                old_path.unlink()
+            except Exception:
+                pass
+
+        new_version = "latest"
+        try:
+            ver_proc = subprocess.run(
+                [str(target_path), "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if ver_proc.returncode == 0 and ver_proc.stdout.strip():
+                new_version = ver_proc.stdout.strip()
+        except Exception:
+            pass
+
+        logger.info(f"Successfully updated gallery-dl to version {new_version}")
+        return {
+            "success": True,
+            "output": f"gallery-dl successfully updated to version {new_version}!",
+        }
+    except Exception as exc:
+        logger.exception("Failed to update gallery-dl executable")
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
+        return {
+            "success": False,
+            "output": f"Failed to update gallery-dl: {exc}",
+        }
+
+
+async def update_gallerydl(request: Request) -> JSONResponse:
+    """POST /api/update-gallerydl — Update gallery-dl to latest release."""
+    try:
+        result = await asyncio.to_thread(_run_gallerydl_update)
+        return JSONResponse(result)
+    except Exception as exc:
+        logger.exception("gallery-dl update failed")
+        return _error(str(exc), status=500)
 async def health(request: Request) -> JSONResponse:
     """GET /health — Readiness probe for startup sequencing."""
     return JSONResponse({"status": "ok"})
@@ -631,6 +738,8 @@ def _parse_gallery_dl_output(stdout_str: str) -> tuple[dict, list[dict]]:
 
         if isinstance(entry, list) and len(entry) >= 2:
             code = entry[0]
+            if code in (1, 6, -1):
+                continue
             if len(entry) >= 3 and isinstance(entry[2], dict):
                 metadata = entry[2]
                 direct_url = str(entry[1]) if entry[1] else None
@@ -895,42 +1004,30 @@ async def fetch_social(request: Request) -> JSONResponse:
             logger.warning(f"Failed to fetch avatar: {e}")
 
         # 2. Target posts and dedicated reels (Stories are excluded)
+        # /posts extracts the entire grid feed (all photos, carousels, and grid videos)
         if "/reels" in clean_url:
-            target_profile_url = f"https://www.instagram.com/{ig_username}/reels"
-            posts_cmd = [
-                gallery_dl_bin,
-                "-j",
-                "--sleep-request", "1",
-                target_profile_url
-            ]
+            primary_url = f"https://www.instagram.com/{ig_username}/reels"
             dm._broadcast_log("social", f"Connecting to Instagram Reels stream for @{ig_username}...")
         elif "/posts" in clean_url:
-            target_profile_url = f"https://www.instagram.com/{ig_username}/posts"
-            posts_cmd = [
-                gallery_dl_bin,
-                "-j",
-                "--sleep-request", "1",
-                target_profile_url
-            ]
+            primary_url = f"https://www.instagram.com/{ig_username}/posts"
             dm._broadcast_log("social", f"Connecting to Instagram Feed Posts stream for @{ig_username}...")
         else:
-            target_profile_url = f"https://www.instagram.com/{ig_username}/"
-            posts_cmd = [
+            primary_url = f"https://www.instagram.com/{ig_username}/posts"
+            dm._broadcast_log("social", f"Connecting to full Instagram profile stream for @{ig_username}...")
+
+        def _execute_dl(target_u: str):
+            global active_social_process
+            cmd = [
                 gallery_dl_bin,
                 "-j",
-                "-o", "extractor.instagram.include=posts,reels",
                 "--sleep-request", "1",
-                target_profile_url
+                target_u
             ]
-            dm._broadcast_log("social", f"Connecting to full Instagram stream (Feed Posts + Dedicated Reels) for @{ig_username}...")
+            if resolved_cookie:
+                cmd.extend(["--cookies", resolved_cookie])
 
-        if resolved_cookie:
-            posts_cmd.extend(["--cookies", resolved_cookie])
-
-        def _run_profile_extraction():
-            global active_social_process
             p = subprocess.Popen(
-                posts_cmd,
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -952,14 +1049,15 @@ async def fetch_social(request: Request) -> JSONResponse:
                         if found_count == 1 or found_count % 5 == 0:
                             dm._broadcast_log("social", f"📸 Scanned {found_count} media items from @{ig_username}...")
                     elif any(kw in line_str.lower() for kw in ("warning", "error", "429", "rate limit")):
-                        dm._broadcast_log("social", f"[Log] {line_str}")
+                        if "abortextraction" not in line_str.lower() and "login page" not in line_str.lower():
+                            dm._broadcast_log("social", f"[Log] {line_str}")
                 p.wait()
             finally:
                 active_social_process = None
             return "\n".join(stdout_lines).strip()
 
         try:
-            stdout_str = await asyncio.to_thread(_run_profile_extraction)
+            stdout_str = await asyncio.to_thread(_execute_dl, primary_url)
             if stdout_str:
                 p_info, p_items = _parse_gallery_dl_output(stdout_str)
                 if p_items:
@@ -968,7 +1066,38 @@ async def fetch_social(request: Request) -> JSONResponse:
                     post_info["fullname"] = p_info["fullname"]
                 if not post_info.get("caption") and p_info.get("caption"):
                     post_info["caption"] = p_info["caption"]
-                dm._broadcast_log("social", f"✅ Successfully scanned {len(final_items)} media items from @{ig_username}!")
+
+            # If user explicitly gave /reels, but it was blocked by login redirect (0 items found):
+            # Fall back automatically to profile /posts so user NEVER gets 0 items!
+            if "/reels" in clean_url and not final_items:
+                dm._broadcast_log("social", f"Reels stream restricted by Instagram. Extracting profile grid videos for @{ig_username}...")
+                fallback_str = await asyncio.to_thread(_execute_dl, f"https://www.instagram.com/{ig_username}/posts")
+                if fallback_str:
+                    fb_info, fb_items = _parse_gallery_dl_output(fallback_str)
+                    if fb_items:
+                        final_items.extend(fb_items)
+                    if not post_info.get("fullname") and fb_info.get("fullname"):
+                        post_info["fullname"] = fb_info["fullname"]
+
+            # If user gave bare profile (not /posts and not /reels), attempt dedicated reels pass to catch unshared reels
+            if "/reels" not in clean_url and "/posts" not in clean_url:
+                try:
+                    reels_str = await asyncio.to_thread(_execute_dl, f"https://www.instagram.com/{ig_username}/reels")
+                    if reels_str:
+                        _, r_items = _parse_gallery_dl_output(reels_str)
+                        if r_items:
+                            existing_urls = {it["url"] for it in final_items}
+                            existing_ids = {it.get("id") for it in final_items}
+                            for r_it in r_items:
+                                if r_it["url"] not in existing_urls and r_it.get("id") not in existing_ids:
+                                    final_items.append(r_it)
+                                    existing_urls.add(r_it["url"])
+                                    if r_it.get("id"):
+                                        existing_ids.add(r_it["id"])
+                except Exception as exc:
+                    logger.debug(f"Optional reels pass ignored: {exc}")
+
+            dm._broadcast_log("social", f"✅ Successfully scanned {len(final_items)} media items from @{ig_username}!")
         except Exception as e:
             logger.warning(f"Failed to fetch posts: {e}")
             dm._broadcast_log("social", f"⚠️ Profile scan error: {e}")
@@ -2347,7 +2476,7 @@ def _execute_inventory_sync(dm, watchlist: list[str]) -> dict[str, Any]:
             continue
         dm._broadcast_log("social", f"[Inventory] Scanning creator @{creator_clean}...")
         url = f"https://www.instagram.com/{creator_clean}/"
-        cmd = [gallery_dl_bin, "--range", "1-50", "-j", "-o", "extractor.instagram.include=posts,reels", url]
+        cmd = [gallery_dl_bin, "--range", "1-50", "-j", f"https://www.instagram.com/{creator_clean}/posts"]
         if resolved_cookie:
             cmd.extend(["--cookies", resolved_cookie])
 
@@ -2992,6 +3121,7 @@ routes = [
     Route("/api/info", get_video_info, methods=["POST"]),
     Route("/api/playlist-info", get_playlist_info, methods=["POST"]),
     Route("/api/update-ytdlp", update_ytdlp, methods=["POST"]),
+    Route("/api/update-gallerydl", update_gallerydl, methods=["POST"]),
     Route("/api/fetch-info", fetch_info, methods=["GET"]),
     Route("/api/upload-cookie", upload_cookie, methods=["POST"]),
     Route("/api/clear-cookie", clear_cookie, methods=["POST"]),

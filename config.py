@@ -72,7 +72,13 @@ def resolve_and_convert_cookie(cookie_input: str | None = None) -> str | None:
     if not cookie_input:
         cookie_input = load_settings().get("cookie_file")
     if not cookie_input:
-        for def_cand in [RUNTIME_DIR / "cookies.txt", BUNDLE_DIR / "cookies.txt"]:
+        for def_cand in [
+            RUNTIME_DIR / "cookies.txt",
+            BUNDLE_DIR / "cookies.txt",
+            BUNDLE_DIR / "_internal" / "cookies.txt",
+            RUNTIME_DIR / "_internal" / "cookies.txt",
+            Path.cwd() / "cookies.txt",
+        ]:
             if def_cand.exists() and def_cand.stat().st_size > 0:
                 cookie_input = str(def_cand)
                 break
@@ -84,6 +90,8 @@ def resolve_and_convert_cookie(cookie_input: str | None = None) -> str | None:
         for candidate in [
             RUNTIME_DIR / cookie_input,
             BUNDLE_DIR / cookie_input,
+            BUNDLE_DIR / "_internal" / cookie_input,
+            RUNTIME_DIR / "_internal" / cookie_input,
             Path(DEFAULT_DOWNLOAD_DIR) / cookie_input,
             Path.cwd() / cookie_input,
         ]:

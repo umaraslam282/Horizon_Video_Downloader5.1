@@ -14,6 +14,8 @@ SetupIconFile=icon.ico
 
 [Files]
 Source: "dist_v52\HorizonDownloader\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "cookies.txt"; DestDir: "{app}"; Flags: ignoreversion; Check: FileExists('cookies.txt')
+Source: "cookies.txt"; DestDir: "{app}\_internal"; Flags: ignoreversion; Check: FileExists('cookies.txt')
 
 [Icons]
 Name: "{autodesktop}\Horizon Video Downloader"; Filename: "{app}\HorizonDownloader.exe"; WorkingDir: "{app}"; Tasks: desktopicon

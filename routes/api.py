@@ -94,7 +94,7 @@ async def start_download(request: Request) -> JSONResponse:
 
     subtitle_lang = body.get("subtitle_lang", "en")
     if subtitle_lang not in VALID_SUBTITLE_LANGS:
-        return _error(f"'subtitle_lang' must be one of: {', '.join(VALID_SUBTITLE_LANGS)}")
+        subtitle_lang = "en"
 
     cookie_file = body.get("cookie_file")  # Optional string or None
     playlist = bool(body.get("playlist", False))
@@ -1453,7 +1453,7 @@ async def fetch_info(request: Request) -> JSONResponse:
         # Extract subtitles
         subtitles_langs = set()
         if "subtitles" in data and isinstance(data["subtitles"], dict):
-            subtitles_langs.update(data["subtitles"].keys())
+            subtitles_langs.update(k for k in data["subtitles"].keys() if k != "live_chat" and not k.startswith("live_chat"))
             
         if not subtitles_langs and "automatic_captions" in data and isinstance(data["automatic_captions"], dict):
             default_langs = {"en", "ur", "hi", "es", "fr", "de", "ar", "ru", "pt", "ja", "ko", "zh", "it", "nl", "pl", "tr"}

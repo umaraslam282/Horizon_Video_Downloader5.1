@@ -489,9 +489,10 @@ const App={
         const subSel = document.getElementById('s-sublang');
         const mainSubSel = document.getElementById('s-subs');
         
-        if(data.subtitles && data.subtitles.length > 0){
+        const validSubs = (data.subtitles || []).filter(code => code !== 'live_chat' && !code.startsWith('live_chat'));
+        if(validSubs.length > 0){
            const languageNames = new Intl.DisplayNames(['en'], { type: 'language' });
-           let subs = data.subtitles.map(code => {
+           let subs = validSubs.map(code => {
                let displayName = code;
                try {
                    displayName = languageNames.of(code);
@@ -504,16 +505,15 @@ const App={
            if(subSel) {
                subSel.innerHTML = subs.map(s => `<option value="${s.code}">${s.displayName}</option>`).join('');
            }
-           
-           if(mainSubSel && mainSubSel.value === 'none') {
-               mainSubSel.value = 'best';
-           }
            this.toast('Video info & subtitles loaded', 'ok');
         } else {
+           if(subSel) {
+               subSel.innerHTML = '<option value="en">English (Default)</option>';
+           }
            if(mainSubSel) {
                mainSubSel.value = 'none';
            }
-           this.toast('Video info loaded (no subs)', 'info');
+           this.toast('Video info loaded', 'ok');
         }
         
         this.log(`[SUCCESS] Metadata extracted successfully.`);

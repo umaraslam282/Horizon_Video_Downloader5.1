@@ -46,9 +46,7 @@ icon_file = os.path.join(project_root, "icon.ico")
 if os.path.exists(icon_file):
     bundled_data.append((icon_file, "."))
 
-cookie_file = os.path.join(project_root, "cookies.txt")
-if os.path.exists(cookie_file):
-    bundled_data.append((cookie_file, "."))
+# Cookies excluded from installer
 
 # ── Analysis ─────────────────────────────────────────────────────
 a = Analysis(
@@ -57,6 +55,15 @@ a = Analysis(
     binaries=bundled_binaries,
     datas=bundled_data,
     hiddenimports=[
+        # App Routes & Modules
+        "routes",
+        "routes.api",
+        "routes.ws",
+        "download_manager",
+        "sniffer_manager",
+        "ws_manager",
+        "database",
+        "config",
         # Uvicorn
         "uvicorn",
         "uvicorn.logging",

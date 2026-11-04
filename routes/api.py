@@ -1010,15 +1010,18 @@ async def fetch_social(request: Request) -> JSONResponse:
 
         # 2. Target posts and dedicated reels (Stories are excluded)
         # /posts extracts the entire grid feed (all photos, carousels, and grid videos)
-        if "/reels" in clean_url:
+        is_direct_reels = "/reels" in clean_url
+        is_direct_posts = "/posts" in clean_url
+
+        if is_direct_reels:
             primary_url = f"https://www.instagram.com/{ig_username}/reels"
             dm._broadcast_log("social", f"Connecting to Instagram Reels stream for @{ig_username}...")
-        elif "/posts" in clean_url:
+        elif is_direct_posts:
             primary_url = f"https://www.instagram.com/{ig_username}/posts"
             dm._broadcast_log("social", f"Connecting to Instagram Feed Posts stream for @{ig_username}...")
         else:
             primary_url = f"https://www.instagram.com/{ig_username}/posts"
-            dm._broadcast_log("social", f"Connecting to full Instagram profile stream for @{ig_username}...")
+            dm._broadcast_log("social", f"[Step 1/2: Grid Feed] Connecting to profile feed stream for @{ig_username}...")
 
         def _execute_dl(target_u: str):
             global active_social_process
@@ -1043,6 +1046,8 @@ async def fetch_social(request: Request) -> JSONResponse:
             active_social_process = p
             stdout_lines = []
             found_count = 0
+            is_reels_call = "/reels" in target_u
+            unit_label = "reels" if is_reels_call else "media items"
             try:
                 for line in p.stdout:
                     line_str = line.strip()
@@ -1052,7 +1057,7 @@ async def fetch_social(request: Request) -> JSONResponse:
                     if '"post_id":' in line_str or '"post_shortcode":' in line_str or '"shortcode":' in line_str:
                         found_count += 1
                         if found_count == 1 or found_count % 25 == 0:
-                            dm._broadcast_log("social", f"📸 Scanned {found_count} media items from @{ig_username}...")
+                            dm._broadcast_log("social", f"📸 Scanned {found_count} {unit_label} from @{ig_username}...")
                     elif not line_str.startswith(('"', '{', '}', ']')) and any(kw in line_str.lower() for kw in ("warning", "error", "429", "rate limit")):
                         if "abortextraction" not in line_str.lower() and "login page" not in line_str.lower():
                             dm._broadcast_log("social", f"[Log] {line_str}")
@@ -1072,10 +1077,16 @@ async def fetch_social(request: Request) -> JSONResponse:
                 if not post_info.get("caption") and p_info.get("caption"):
                     post_info["caption"] = p_info["caption"]
 
+            grid_imgs = sum(1 for it in final_items if it.get("type") == "image")
+            grid_vids = sum(1 for it in final_items if it.get("type") == "video")
+
+            if not is_direct_reels and not is_direct_posts:
+                dm._broadcast_log("social", f"📋 [Step 1 Complete] Feed scan found {len(final_items)} items ({grid_imgs} photos, {grid_vids} videos).")
+
             # If user explicitly gave /reels, but it was blocked by login redirect (0 items found):
             # Fall back automatically to profile /posts so user NEVER gets 0 items!
-            if "/reels" in clean_url and not final_items:
-                dm._broadcast_log("social", f"Reels stream restricted by Instagram. Extracting profile grid videos for @{ig_username}...")
+            if is_direct_reels and not final_items:
+                dm._broadcast_log("social", f"⚠️ Dedicated Reels tab restricted by Instagram API. Falling back to profile grid to recover all available videos for @{ig_username}...")
                 fallback_str = await asyncio.to_thread(_execute_dl, f"https://www.instagram.com/{ig_username}/posts")
                 if fallback_str:
                     fb_info, fb_items = _parse_gallery_dl_output(fallback_str)
@@ -1083,11 +1094,15 @@ async def fetch_social(request: Request) -> JSONResponse:
                         final_items.extend(fb_items)
                     if not post_info.get("fullname") and fb_info.get("fullname"):
                         post_info["fullname"] = fb_info["fullname"]
+                fb_vids = sum(1 for it in final_items if it.get("type") == "video")
+                dm._broadcast_log("social", f"✅ Recovered {len(final_items)} items ({fb_vids} videos) from profile grid!")
 
-            # If user gave bare profile (not /posts and not /reels), attempt dedicated reels pass to catch unshared reels
-            if "/reels" not in clean_url and "/posts" not in clean_url:
+            # Step 2: If user gave bare profile (not /posts and not /reels), scan dedicated reels pass to catch unshared reels
+            if not is_direct_reels and not is_direct_posts:
+                dm._broadcast_log("social", f"[Step 2/2: Reels Tab] Scanning dedicated Reels tab for any additional unshared reels...")
                 try:
                     reels_str = await asyncio.to_thread(_execute_dl, f"https://www.instagram.com/{ig_username}/reels")
+                    added_reels = 0
                     if reels_str:
                         _, r_items = _parse_gallery_dl_output(reels_str)
                         if r_items:
@@ -1099,10 +1114,18 @@ async def fetch_social(request: Request) -> JSONResponse:
                                     existing_urls.add(r_it["url"])
                                     if r_it.get("id"):
                                         existing_ids.add(r_it["id"])
+                                    added_reels += 1
+                    if added_reels > 0:
+                        dm._broadcast_log("social", f"🎬 [Step 2 Complete] Added {added_reels} additional unshared reels from Reels tab!")
+                    else:
+                        dm._broadcast_log("social", f"ℹ️ [Step 2 Complete] All {grid_vids} reels are already on the grid (no unshared reels found).")
                 except Exception as exc:
                     logger.debug(f"Optional reels pass ignored: {exc}")
+                    dm._broadcast_log("social", f"ℹ️ [Step 2 Complete] Dedicated Reels tab scan finished (all {grid_vids} grid reels retained).")
 
-            dm._broadcast_log("social", f"✅ Successfully scanned {len(final_items)} media items from @{ig_username}!")
+            tot_imgs = sum(1 for it in final_items if it.get("type") == "image")
+            tot_vids = sum(1 for it in final_items if it.get("type") == "video")
+            dm._broadcast_log("social", f"✅ [Done] Successfully scanned {len(final_items)} media items ({tot_imgs} photos, {tot_vids} videos) from @{ig_username}!")
         except Exception as e:
             logger.warning(f"Failed to fetch posts: {e}")
             dm._broadcast_log("social", f"⚠️ Profile scan error: {e}")

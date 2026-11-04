@@ -591,20 +591,23 @@ def _parse_gallery_dl_output(stdout_str: str) -> tuple[dict, list[dict]]:
     Prevents duplicate entries caused by nested resolution candidate arrays.
     """
     entries = []
-    try:
-        parsed = json.loads(stdout_str)
-        if isinstance(parsed, list):
-            entries = parsed
-        elif isinstance(parsed, dict):
-            entries = [parsed]
-    except json.JSONDecodeError:
-        for line in stdout_str.splitlines():
-            line = line.strip()
-            if line:
-                try:
-                    entries.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
+    decoder = json.JSONDecoder()
+    idx = 0
+    text_len = len(stdout_str)
+    while idx < text_len:
+        while idx < text_len and stdout_str[idx] not in '[{':
+            idx += 1
+        if idx >= text_len:
+            break
+        try:
+            obj, next_idx = decoder.raw_decode(stdout_str, idx)
+            if isinstance(obj, list):
+                entries.extend(obj)
+            elif isinstance(obj, dict):
+                entries.append(obj)
+            idx = next_idx
+        except json.JSONDecodeError:
+            idx += 1
 
     post_info = {
         "platform": "instagram",
@@ -891,24 +894,38 @@ async def fetch_social(request: Request) -> JSONResponse:
         except Exception as e:
             logger.warning(f"Failed to fetch avatar: {e}")
 
-        # 2. Target posts or reels
-        # If user explicitly gave /reels, scan reels.
-        # Otherwise scan /posts which captures all posts and reels!
+        # 2. Target posts and dedicated reels (Stories are excluded)
         if "/reels" in clean_url:
             target_profile_url = f"https://www.instagram.com/{ig_username}/reels"
-        else:
+            posts_cmd = [
+                gallery_dl_bin,
+                "-j",
+                "--sleep-request", "1",
+                target_profile_url
+            ]
+            dm._broadcast_log("social", f"Connecting to Instagram Reels stream for @{ig_username}...")
+        elif "/posts" in clean_url:
             target_profile_url = f"https://www.instagram.com/{ig_username}/posts"
+            posts_cmd = [
+                gallery_dl_bin,
+                "-j",
+                "--sleep-request", "1",
+                target_profile_url
+            ]
+            dm._broadcast_log("social", f"Connecting to Instagram Feed Posts stream for @{ig_username}...")
+        else:
+            target_profile_url = f"https://www.instagram.com/{ig_username}/"
+            posts_cmd = [
+                gallery_dl_bin,
+                "-j",
+                "-o", "extractor.instagram.include=posts,reels",
+                "--sleep-request", "1",
+                target_profile_url
+            ]
+            dm._broadcast_log("social", f"Connecting to full Instagram stream (Feed Posts + Dedicated Reels) for @{ig_username}...")
 
-        posts_cmd = [
-            gallery_dl_bin,
-            "-j",
-            "--sleep-request", "1",
-            target_profile_url
-        ]
         if resolved_cookie:
             posts_cmd.extend(["--cookies", resolved_cookie])
-
-        dm._broadcast_log("social", f"Connecting to Instagram profile stream ({target_profile_url})...")
 
         def _run_profile_extraction():
             global active_social_process
@@ -2330,7 +2347,7 @@ def _execute_inventory_sync(dm, watchlist: list[str]) -> dict[str, Any]:
             continue
         dm._broadcast_log("social", f"[Inventory] Scanning creator @{creator_clean}...")
         url = f"https://www.instagram.com/{creator_clean}/"
-        cmd = [gallery_dl_bin, "--range", "1-50", "-j", url]
+        cmd = [gallery_dl_bin, "--range", "1-50", "-j", "-o", "extractor.instagram.include=posts,reels", url]
         if resolved_cookie:
             cmd.extend(["--cookies", resolved_cookie])
 

@@ -1046,9 +1046,9 @@ async def fetch_social(request: Request) -> JSONResponse:
                     stdout_lines.append(line_str)
                     if '"post_id":' in line_str or '"post_shortcode":' in line_str or '"shortcode":' in line_str:
                         found_count += 1
-                        if found_count == 1 or found_count % 5 == 0:
+                        if found_count == 1 or found_count % 25 == 0:
                             dm._broadcast_log("social", f"📸 Scanned {found_count} media items from @{ig_username}...")
-                    elif any(kw in line_str.lower() for kw in ("warning", "error", "429", "rate limit")):
+                    elif not line_str.startswith(('"', '{', '}', ']')) and any(kw in line_str.lower() for kw in ("warning", "error", "429", "rate limit")):
                         if "abortextraction" not in line_str.lower() and "login page" not in line_str.lower():
                             dm._broadcast_log("social", f"[Log] {line_str}")
                 p.wait()

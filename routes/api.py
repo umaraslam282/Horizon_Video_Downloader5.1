@@ -2597,9 +2597,32 @@ def _execute_inventory_sync(dm, watchlist: list[str]) -> dict[str, Any]:
             cmd.extend(["--cookies", resolved_cookie])
 
         try:
+            items = []
             res = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=60, creationflags=creation_flags)
             if res.returncode == 0 and res.stdout:
-                _, items = _parse_gallery_dl_output(res.stdout)
+                _, p_items = _parse_gallery_dl_output(res.stdout)
+                if p_items:
+                    items.extend(p_items)
+
+            # Also check dedicated reels tab for unshared reels
+            try:
+                r_cmd = [gallery_dl_bin, "--range", "1-50", "-j", f"https://www.instagram.com/{creator_clean}/reels"]
+                if resolved_cookie:
+                    r_cmd.extend(["--cookies", resolved_cookie])
+                r_res = subprocess.run(r_cmd, capture_output=True, text=True, errors="replace", timeout=45, creationflags=creation_flags)
+                if r_res.returncode == 0 and r_res.stdout:
+                    _, r_items = _parse_gallery_dl_output(r_res.stdout)
+                    if r_items:
+                        seen_ids = {it.get("id") or it.get("url") for it in items}
+                        for r_it in r_items:
+                            rid = r_it.get("id") or r_it.get("url")
+                            if rid not in seen_ids:
+                                items.append(r_it)
+                                seen_ids.add(rid)
+            except Exception:
+                pass
+
+            if items:
                 new_urls = []
                 for it in items:
                     m_id = str(it.get("media_id") or it.get("url") or "")

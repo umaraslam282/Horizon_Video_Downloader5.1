@@ -2352,15 +2352,29 @@ def _execute_inventory_sync(dm, watchlist: list[str]) -> dict[str, Any]:
 
                 if new_urls:
                     dm._broadcast_log("social", f"[Inventory] Found {len(new_urls)} NEW posts for @{creator_clean}! Queuing downloads...")
-                    out_dir = load_settings().get("download_dir") or str(DEFAULT_DOWNLOAD_DIR)
-                    _execute_download_social(dm, new_urls, out_dir=out_dir, creator=creator_clean)
+                    settings = load_settings()
+                    out_dir = settings.get("social_output_dir") or settings.get("output_dir") or str(DEFAULT_DOWNLOAD_DIR)
+                    _execute_download_social(
+                        dm,
+                        new_urls,
+                        output_dir=out_dir,
+                        creator=creator_clean,
+                        organize_subfolder=True
+                    )
                 else:
                     dm._broadcast_log("social", f"[Inventory] @{creator_clean} is up to date (no new posts).")
         except Exception as e:
             dm._broadcast_log("social", f"[Inventory] Error scanning @{creator_clean}: {e}")
 
     dm._broadcast_log("social", f"⚡ Inventory Sync Complete: {total_new} new items downloaded, {total_skipped} skipped (already saved).")
-    return {"scanned_creators": len(watchlist), "new_items": total_new, "skipped_already_saved": total_skipped}
+    return {
+        "success": True,
+        "scanned_creators": len(watchlist),
+        "downloaded_count": total_new,
+        "new_items": total_new,
+        "skipped_count": total_skipped,
+        "skipped_already_saved": total_skipped,
+    }
 
 
 async def list_inventory_endpoint(request: Request) -> JSONResponse:
@@ -2418,7 +2432,7 @@ async def sync_inventory_endpoint(request: Request) -> JSONResponse:
     settings = load_settings()
     watchlist = settings.get("creator_watchlist", [])
     if not watchlist:
-        return JSONResponse({"message": "Watchlist is empty. Add creators in Settings.", "scanned": 0, "new": 0})
+        return JSONResponse({"success": True, "message": "Watchlist is empty. Add creators in Settings.", "downloaded_count": 0, "skipped_count": 0, "scanned": 0, "new": 0})
 
     dm = request.app.state.download_manager
     dm._broadcast_log("social", f"⚡ Starting Inventory Sync for {len(watchlist)} creators...")

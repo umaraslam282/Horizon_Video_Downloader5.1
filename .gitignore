@@ -26,6 +26,7 @@ cookies.txt
 history.db
 *.tmp
 settings.json
+push_to_github.bat
 
 # Test media / downloads
 *.m4a

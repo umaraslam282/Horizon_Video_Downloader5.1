@@ -1,10 +1,10 @@
 [Setup]
 AppName=Horizon Video Downloader
-AppVersion=5.1
+AppVersion=5.2
 DefaultDirName={autopf}\HorizonDownloader
 DefaultGroupName=Horizon Video Downloader
 OutputDir=.
-OutputBaseFilename=HorizonDownloader_Setup_v5.1
+OutputBaseFilename=HorizonDownloader_Setup_v5.2
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -13,7 +13,7 @@ RestartApplications=no
 SetupIconFile=icon.ico
 
 [Files]
-Source: "dist_v51\HorizonDownloader\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist_v52\HorizonDownloader\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autodesktop}\Horizon Video Downloader"; Filename: "{app}\HorizonDownloader.exe"; WorkingDir: "{app}"; Tasks: desktopicon
@@ -58,9 +58,15 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
 begin
   if CurStep = ssInstall then
   begin
     KillRunningProcesses();
+  end;
+  if CurStep = ssPostInstall then
+  begin
+    Exec(ExpandConstant('{cmd}'), '/C findstr /i "hvd.com" "' + ExpandConstant('{sys}\drivers\etc\hosts') + '" >nul || (echo.>> "' + ExpandConstant('{sys}\drivers\etc\hosts') + '" & echo 127.0.0.1 hvd.com>> "' + ExpandConstant('{sys}\drivers\etc\hosts') + '" & echo 127.0.0.1 www.hvd.com>> "' + ExpandConstant('{sys}\drivers\etc\hosts') + '" & ipconfig /flushdns >nul)', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;

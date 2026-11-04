@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+
+# PyInstaller & Dist Builds
+build/
+dist/
+dist_*/
+*.spec.bak
+*.log
+
+# Root Binaries & Bundles (Downloadable via Releases)
+*.exe
+*.zip
+*.tar.gz
+
+# App runtime files (user data — never commit)
+cookie.txt
+cookies.txt
+*cookie*.txt
+history.db
+*.tmp
+settings.json
+
+# Test media / downloads
+*.m4a
+*.mp4
+*.mkv
+*.webm
+*.jpg
+*.jpeg
+*.png
+*.webp
+downloads/
+Instagram/
+
+# IDEs & System
+.vscode/
+.idea/
+*.suo
+*.user
+.gemini/

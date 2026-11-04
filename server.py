@@ -25,7 +25,8 @@ from pathlib import Path
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
-from starlette.routing import Mount
+from starlette.responses import FileResponse, PlainTextResponse
+from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from config import APP_NAME, APP_VERSION, STATIC_DIR
@@ -79,8 +80,17 @@ def create_app() -> Starlette:
         logger.info("Server shutdown complete")
 
     # ── Assemble route table ──────────────────────────────────
+    async def favicon_endpoint(request):
+        fav_path = Path(STATIC_DIR) / "favicon.ico"
+        if not fav_path.exists():
+            fav_path = Path("icon.ico")
+        if fav_path.exists():
+            return FileResponse(str(fav_path), media_type="image/x-icon")
+        return PlainTextResponse("Not Found", status_code=404)
+
     # API and WS routes come first; static mount is last (catch-all).
     all_routes = [
+        Route("/favicon.ico", endpoint=favicon_endpoint, methods=["GET"]),
         *api_routes,
         *ws_routes,
     ]

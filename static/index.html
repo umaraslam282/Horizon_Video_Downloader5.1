@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0a0a0a">
+    <title>Horizon Video Downloader v5.2</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css?v=5.2.1">
+</head>
+<body>
+<div id="app">
+
+    <!-- ═══════════════════ HEADER ═══════════════════ -->
+    <header class="app-header">
+        <div class="brand">
+            <svg class="brand-icon" viewBox="0 0 28 28" fill="none"><path d="M14 2L26 8v12l-12 6L2 20V8l12-6z" stroke="url(#bg)" stroke-width="1.5"/><path d="M10 13l3 3 5-6" stroke="url(#bg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="bg" x1="0" y1="0" x2="28" y2="28"><stop stop-color="#8b5cf6"/><stop offset="1" stop-color="#06b6d4"/></linearGradient></defs></svg>
+            <span class="brand-text">HORIZON</span>
+            <span class="brand-ver">v5.2</span>
+        </div>
+        <nav class="tab-bar" id="tab-bar">
+            <button class="tab-btn active" data-tab="single" type="button">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 3v12m0 0l-4-4m4 4l4-4M3 15v2a2 2 0 002 2h10a2 2 0 002-2v-2"/></svg><span>Single</span>
+            </button>
+            <button class="tab-btn" data-tab="playlist" type="button">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="16" height="14" rx="2"/><path d="M8 8l5 3-5 3V8z" fill="currentColor" stroke="none"/></svg><span>Playlist</span>
+            </button>
+            <button class="tab-btn" data-tab="social" type="button">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><circle cx="8" cy="8" r="2.5"/><path d="M4 17a6 6 0 0112 0"/></svg><span>Social</span>
+            </button>
+            <button class="tab-btn" data-tab="sniffer" type="button">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3"/><path d="M10 3a7 7 0 017 7M10 7a3 3 0 013 3"/></svg><span>Sniffer</span><span class="sniffer-badge-count" id="sniffer-badge-count" style="display:none;">0</span>
+            </button>
+            <button class="tab-btn" data-tab="thumbnail" type="button">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><circle cx="8" cy="8" r="2"/><path d="M17 13l-4-4-5 5"/><path d="M11 15l2-2 4 4"/></svg><span>Thumbnail</span>
+            </button>
+            <button class="tab-btn" data-tab="history" type="button">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 5v5l3 3M18 10a8 8 0 11-16 0 8 8 0 0116 0z" stroke-linecap="round" stroke-linejoin="round"/></svg><span>History</span>
+            </button>
+            <span class="tab-sep"></span>
+            <button class="tab-btn" data-tab="log" type="button">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="16" height="14" rx="2"/><polyline points="6 9 8 11 6 13"/><line x1="10" y1="13" x2="14" y2="13"/></svg><span>Log</span>
+            </button>
+            <button class="tab-btn" data-tab="settings" type="button">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="3"/><path d="M10 1.5v2M10 16.5v2M1.5 10h2M16.5 10h2M3.4 3.4l1.4 1.4M15.2 15.2l1.4 1.4M3.4 16.6l1.4-1.4M15.2 4.8l1.4-1.4"/></svg><span>Settings</span>
+            </button>
+            <button class="tab-btn" data-tab="about" type="button">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="8"/><line x1="10" y1="9" x2="10" y2="14"/><circle cx="10" cy="6.5" r="0.5" fill="currentColor"/></svg><span>About</span>
+            </button>
+        </nav>
+        <div class="conn-indicator" id="conn-status"><span class="conn-dot"></span><span class="conn-label">…</span></div>
+    </header>
+
+    <!-- ═══════════════════ MAIN CONTENT ═══════════════════ -->
+    <main class="app-main">
+
+        <!-- ── SINGLE TAB ─────────────────────────────── -->
+        <section id="panel-single" class="tab-panel active" data-type="single">
+            <div class="panel-card glass-panel">
+                <!-- Segmented toggle -->
+                <div class="seg-row">
+                    <div class="seg-ctrl" id="single-seg">
+                        <button class="seg-btn active" data-mode="video" type="button">Video</button>
+                        <button class="seg-btn" data-mode="audio" type="button">Audio</button>
+                    </div>
+                </div>
+                <!-- URL -->
+                <div class="url-row">
+                    <div class="url-wrap"><svg class="url-ico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8.5 11.5a4 4 0 005.66.35l2.5-2.5a4 4 0 00-5.66-5.66L9.6 5.1"/><path d="M11.5 8.5a4 4 0 00-5.66-.35l-2.5 2.5a4 4 0 005.66 5.66l1.4-1.4"/></svg><input class="url-input" id="single-url" type="url" placeholder="Paste any link: YouTube, Instagram, TikTok, Playlist… (Auto-routes!)" autocomplete="off" spellcheck="false"></div>
+                    <button class="paste-btn" data-target="single-url" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="8" height="4" rx="1"/><rect x="3" y="4" width="14" height="14" rx="2"/></svg>Paste</button>
+                    <button class="fetch-btn" id="single-fetch-btn" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/></svg><span>Fetch Info</span><div class="btn-spinner" hidden></div></button>
+                </div>
+                <!-- Fetch Loader -->
+                <div id="fetch-loader" class="pl-loader" style="display:none; margin: 16px 0;">
+                    <div class="spinner-ring"></div>
+                    <p style="margin-left: 8px;">Fetching video metadata…</p>
+                </div>
+
+                <!-- Video Preview & Controls Tile (Flat tile displaying metadata & options unified) -->
+                <div id="single-media-tile" class="media-flat-tile glass-panel" style="display:none;">
+                    <!-- Media Header Info -->
+                    <div class="tile-header">
+                        <div class="tile-thumb-container">
+                            <img id="preview-thumbnail" src="" alt="Thumbnail" class="tile-thumb-img">
+                            <span id="preview-duration" class="tile-dur-tag">00:00</span>
+                        </div>
+                        <div class="tile-info">
+                            <h3 id="preview-title" class="tile-title" title="">Video Title</h3>
+                            <div class="tile-subinfo">
+                                <span id="preview-uploader" class="tile-channel">Channel Name</span>
+                                <span class="tile-dot">•</span>
+                                <span id="preview-badge" class="tile-badge">Media Ready</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Options Grid directly inside the flat tile -->
+                    <div class="tile-body">
+                        <!-- Video options -->
+                        <div class="options-grid" id="single-video-opts">
+                            <div class="opt-group"><label>Resolution</label><div class="sel-wrap"><select id="s-resolution"><option value="best">Best Available</option><option value="4320">8K (4320p)</option><option value="2160">4K (2160p)</option><option value="1440">1440p</option><option value="1080" selected>1080p</option><option value="720">720p</option><option value="480">480p</option><option value="360">360p</option><option value="144">144p</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div></div>
+                            <div class="opt-group"><label>Video Format</label><div class="sel-wrap"><select id="s-vformat"><option value="mp4">MP4</option><option value="mkv">MKV</option><option value="webm">WebM</option><option value="mov">MOV</option><option value="avi">AVI</option><option value="flv">FLV</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div></div>
+                            <div class="opt-group"><label>Subtitles</label><div class="sel-wrap"><select id="s-subs"><option value="none">None</option><option value="best">Best Available</option><option value="author">Author Only</option><option value="auto">AI-Generated</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div></div>
+                            <div class="opt-group"><label>Subtitle Language</label><div class="sel-wrap"><select id="s-sublang"><option value="en">English</option><option value="ur">Urdu</option><option value="es">Spanish</option><option value="ar">Arabic</option><option value="fr">French</option><option value="de">German</option><option value="hi">Hindi</option><option value="ja">Japanese</option><option value="ko">Korean</option><option value="zh">Chinese</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div></div>
+                        </div>
+                        <!-- Audio options (hidden by default) -->
+                        <div class="options-grid hidden" id="single-audio-opts">
+                            <div class="opt-group"><label>Audio Format</label><div class="sel-wrap"><select id="s-aformat"><option value="best">Best Original (Raw)</option><option value="mp3">MP3</option><option value="m4a">M4A (AAC)</option><option value="flac">FLAC (Lossless)</option><option value="wav">WAV</option><option value="ogg">OGG Vorbis</option><option value="alac">ALAC (Lossless)</option><option value="opus">Opus</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div></div>
+                        </div>
+                        <!-- Video Range / Clip Trimming Section -->
+                        <div class="clip-range-box" style="margin-top:14px; padding:12px 14px; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:10px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <label class="select-all-toggle" style="margin:0; cursor:pointer;">
+                                    <input type="checkbox" id="s-clip-toggle">
+                                    <span class="custom-check"></span>
+                                    <span style="font-weight:600; font-size:0.85rem; color:var(--text-1); display:flex; align-items:center; gap:6px;">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px; height:16px; color:var(--accent);"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+                                        Download Specific Part (Clip / Trim Video)
+                                    </span>
+                                </label>
+                                <span id="clip-dur-hint" style="font-size:0.75rem; color:var(--text-3);">Full length: --:--</span>
+                            </div>
+                            <div id="clip-inputs-row" class="options-grid" style="display:none; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+                                <div class="opt-group">
+                                    <label style="font-size:0.75rem;">Start Time (hh:mm:ss or mm:ss or seconds)</label>
+                                    <input type="text" class="opt-input" id="s-start-time" placeholder="e.g. 01:15 or 75s" autocomplete="off" spellcheck="false" style="padding:8px 10px; font-size:0.85rem;">
+                                </div>
+                                <div class="opt-group">
+                                    <label style="font-size:0.75rem;">End Time (hh:mm:ss or mm:ss or seconds)</label>
+                                    <input type="text" class="opt-input" id="s-end-time" placeholder="e.g. 03:45" autocomplete="off" spellcheck="false" style="padding:8px 10px; font-size:0.85rem;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Advanced Power-User Options -->
+                        <details class="advanced-details" style="margin-top:12px;">
+                            <summary class="advanced-summary">More options (Speed Limit, Web Player Referer)</summary>
+                            <div class="options-grid" style="margin-top:10px;">
+                                <div class="opt-group"><label>Bandwidth Limit</label><div class="sel-wrap"><select id="s-rate-limit"><option value="">No Limit</option><option value="50M">50 MB/s</option><option value="10M">10 MB/s</option><option value="5M">5 MB/s</option><option value="2M">2 MB/s</option><option value="1M">1 MB/s</option><option value="500K">500 KB/s</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div></div>
+                                <div class="opt-group"><label>Web Player Referer URL (Optional for Anime Sites)</label><input type="text" class="opt-input" id="s-referer" placeholder="e.g. https://megacloud.tv/ or anime page URL" autocomplete="off" spellcheck="false"></div>
+                            </div>
+                        </details>
+                        <!-- Action Download Button -->
+                        <button class="action-btn" id="single-dl-btn" type="button" style="margin-top: 14px;">
+                            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3v12m0 0l-4.5-4.5M11 15l4.5-4.5M3 17v2a1 1 0 001 1h14a1 1 0 001-1v-2"/></svg>
+                            <span class="action-label">DOWNLOAD VIDEO</span>
+                            <div class="btn-spinner" hidden></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── PLAYLIST TAB ───────────────────────────── -->
+        <section id="panel-playlist" class="tab-panel">
+            <!-- Fetch area -->
+            <div class="panel-card glass-panel">
+                <div class="url-row">
+                    <div class="url-wrap"><svg class="url-ico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8.5 11.5a4 4 0 005.66.35l2.5-2.5a4 4 0 00-5.66-5.66L9.6 5.1"/><path d="M11.5 8.5a4 4 0 00-5.66-.35l-2.5 2.5a4 4 0 005.66 5.66l1.4-1.4"/></svg><input class="url-input" id="pl-url" type="url" placeholder="Paste playlist URL…" autocomplete="off" spellcheck="false"></div>
+                    <button class="paste-btn" data-target="pl-url" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="8" height="4" rx="1"/><rect x="3" y="4" width="14" height="14" rx="2"/></svg>Paste</button>
+                    <button class="fetch-btn" id="pl-fetch-btn" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/></svg><span>Fetch Playlist</span><div class="btn-spinner" hidden></div></button>
+                </div>
+            </div>
+            <!-- Playlist content area -->
+            <div id="pl-content" class="pl-content">
+                <!-- Empty state -->
+                <div id="pl-empty" class="pl-empty-state">
+                    <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".2"><rect x="8" y="8" width="48" height="40" rx="4"/><path d="M24 22l16 10-16 10V22z" fill="currentColor" opacity=".3"/></svg>
+                    <p>Paste a playlist URL above and click <strong>Fetch Playlist</strong></p>
+                </div>
+                <!-- Loader (hidden) -->
+                <div id="pl-loader" class="pl-loader hidden">
+                    <div class="spinner-ring"></div>
+                    <p>Fetching playlist metadata…</p>
+                </div>
+                <!-- Playlist header + grid (hidden, populated by JS) -->
+                <div id="pl-results" class="hidden">
+                    <div class="pl-header">
+                        <div class="pl-title-row">
+                            <h3 id="pl-title">Playlist</h3>
+                            <span class="pl-count-badge" id="pl-count-badge">0 videos</span>
+                        </div>
+                        <label class="select-all-toggle"><input type="checkbox" id="pl-select-all" checked><span class="custom-check"></span><span>Select All</span></label>
+                    </div>
+                    <div class="pl-grid" id="pl-grid"></div>
+                </div>
+            </div>
+            <!-- Sticky action bar (hidden until results) -->
+            <div class="pl-action-bar glass-panel" id="pl-action-bar" style="display:none">
+                <div class="seg-ctrl" id="pl-seg">
+                    <button class="seg-btn active" data-mode="video" type="button">Video</button>
+                    <button class="seg-btn" data-mode="audio" type="button">Audio</button>
+                </div>
+                <div class="pl-bar-opts" id="pl-bar-video-opts">
+                    <div class="sel-wrap compact"><select id="pl-resolution"><option value="best">Best</option><option value="4320">8K (4320p)</option><option value="2160">4K (2160p)</option><option value="1440">1440p</option><option value="1080" selected>1080p</option><option value="720">720p</option><option value="480">480p</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div>
+                    <div class="sel-wrap compact"><select id="pl-vformat"><option value="mp4">MP4</option><option value="mkv">MKV</option><option value="webm">WebM</option><option value="mov">MOV</option><option value="avi">AVI</option><option value="flv">FLV</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div>
+                </div>
+                <div class="pl-bar-opts hidden" id="pl-bar-audio-opts">
+                    <div class="sel-wrap compact"><select id="pl-aformat"><option value="best">Best Original</option><option value="mp3">MP3</option><option value="m4a">M4A</option><option value="flac">FLAC</option><option value="wav">WAV</option><option value="ogg">OGG</option><option value="alac">ALAC</option><option value="opus">Opus</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div>
+                </div>
+                <button class="action-btn compact" id="pl-dl-btn" type="button"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3v12m0 0l-4.5-4.5M11 15l4.5-4.5M3 17v2a1 1 0 001 1h14a1 1 0 001-1v-2"/></svg><span class="action-label">Download Selected (<span id="pl-sel-count">0</span>)</span><div class="btn-spinner" hidden></div></button>
+            </div>
+        </section>
+
+        <!-- ── SOCIAL TAB ─────────────────────────────── -->
+        <section id="panel-social" class="tab-panel">
+            <div class="panel-card glass-panel">
+                <!-- Supported Networks Badge Chips -->
+                <div class="social-network-chips">
+                    <span class="net-chip"><span class="net-dot instagram"></span>Instagram</span>
+                    <span class="net-chip"><span class="net-dot tiktok"></span>TikTok</span>
+                    <span class="net-chip"><span class="net-dot twitter"></span>Twitter / X</span>
+                    <span class="net-chip"><span class="net-dot facebook"></span>Facebook</span>
+                    <span class="net-chip"><span class="net-dot reddit"></span>Reddit</span>
+                    <span class="net-chip"><span class="net-dot pinterest"></span>Pinterest</span>
+                </div>
+
+                <!-- Dedicated Social Media Save Folder Bar with Native Browse Button -->
+                <div class="social-dest-bar" style="margin-top:12px; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <div style="display:flex; align-items:center; gap:6px; font-size:0.82rem; color:var(--text-2); font-weight:600; white-space:nowrap;">
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" style="width:15px; height:15px; color:var(--accent);"><path d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+                        <span>Social Save Folder:</span>
+                    </div>
+                    <input type="text" id="social-dest-dir" class="url-input" style="flex:1; min-width:180px; height:32px; font-size:0.8rem; padding:0 10px; background:rgba(0,0,0,0.25);" placeholder="Default: Downloads/Instagram">
+                    <button type="button" id="social-browse-btn" class="btn btn-secondary btn-sm" style="height:32px; padding:0 12px; display:inline-flex; align-items:center; gap:6px; font-size:0.78rem; font-weight:600; border-radius:6px; cursor:pointer;" title="Choose custom destination folder">
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" style="width:13px; height:13px;"><path d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+                        <span>Browse Folder…</span>
+                    </button>
+                    <button type="button" id="social-open-folder-btn" class="btn btn-secondary btn-sm" style="height:32px; padding:0 10px; display:inline-flex; align-items:center; gap:5px; font-size:0.78rem; border-radius:6px; cursor:pointer;" title="Open folder in File Explorer">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px; height:13px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        <span>Open</span>
+                    </button>
+                </div>
+
+                <!-- URL Row with Inline Paste & Fetch -->
+                <div class="url-row" style="margin-top: 14px;">
+                    <div class="url-wrap"><svg class="url-ico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8.5 11.5a4 4 0 005.66.35l2.5-2.5a4 4 0 00-5.66-5.66L9.6 5.1"/><path d="M11.5 8.5a4 4 0 00-5.66-.35l-2.5 2.5a4 4 0 005.66 5.66l1.4-1.4"/></svg><input class="url-input" id="social-url" type="url" placeholder="Paste Instagram, TikTok, Twitter/X, Facebook, or Reddit URL…" autocomplete="off" spellcheck="false"></div>
+                    <button class="paste-btn" data-target="social-url" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="8" height="4" rx="1"/><rect x="3" y="4" width="14" height="14" rx="2"/></svg>Paste</button>
+                    <button class="fetch-btn" id="social-fetch-btn" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/></svg><span>Fetch Media</span><div class="btn-spinner" hidden></div></button>
+                </div>
+
+                <!-- Loader with Live Progress & Stop Button -->
+                <div id="social-loader" class="pl-loader hidden" style="padding: 24px 0; display:flex; flex-direction:column; align-items:center; gap:12px;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <div class="spinner-ring"></div>
+                        <p id="social-loader-text" style="font-size:0.95rem; font-weight:500;">Extracting post metadata & media streams…</p>
+                    </div>
+                    <button id="social-stop-btn" type="button" class="btn btn-secondary btn-sm" style="color:#f87171; border-color:rgba(248,113,113,0.35); background:rgba(248,113,113,0.12); padding:6px 18px; font-weight:600; display:inline-flex; align-items:center; gap:6px; border-radius:6px; cursor:pointer;" title="Stop extraction immediately">
+                        <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px; height:14px;"><rect x="4" y="4" width="12" height="12" rx="2"/></svg>
+                        <span>Stop Extraction</span>
+                    </button>
+                </div>
+
+                <!-- Rich Post Header Card (Author, Avatar, Caption, Stats) -->
+                <div id="social-post-card" class="social-post-card glass-panel" style="display:none;">
+                    <div class="social-post-header">
+                        <div class="social-author-avatar" id="soc-avatar">
+                            <img id="soc-avatar-img" class="soc-avatar-img hidden" alt="Avatar" />
+                            <span id="soc-avatar-text">IG</span>
+                        </div>
+                        <div class="social-author-info">
+                            <div class="social-author-title">
+                                <span id="soc-fullname" class="soc-fullname">Creator Name</span>
+                                <span id="soc-username" class="soc-username">@username</span>
+                                <span id="soc-platform-badge" class="soc-platform-badge">Instagram</span>
+                            </div>
+                            <div class="social-meta-sub">
+                                <span id="soc-date" class="soc-date">Recent</span>
+                                <span class="tile-dot" id="soc-dot1">•</span>
+                                <span id="soc-likes" class="soc-likes">❤️ 0 likes</span>
+                                <span class="tile-dot" id="soc-dot2">•</span>
+                                <a id="soc-post-link" href="#" target="_blank" rel="noopener" class="soc-link">View Original ↗</a>
+                                <span class="tile-dot" id="soc-dot3" style="display:none;">•</span>
+                                <button id="soc-pfp-btn" class="soc-pfp-btn hidden" type="button" title="Save Full HD Profile Picture">
+                                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="8" r="4"/><path d="M4 18c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M14 12l2 2 4-4"/></svg>
+                                    <span>Save HD PFP</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="soc-caption-container" class="social-caption-container">
+                        <p id="soc-caption" class="social-caption-text"></p>
+                    </div>
+                </div>
+
+                <!-- Preview Controls & Gallery Section -->
+                <div id="social-preview-section" style="display:none; margin-top:20px;">
+                    <!-- Filter & Mode Bar -->
+                    <div class="social-filter-bar">
+                        <!-- Mode Segmented (Media vs Audio Extraction) -->
+                        <div class="seg-ctrl" id="social-mode-seg">
+                            <button class="seg-btn active" data-socmode="media" type="button">Media (Video & Photos)</button>
+                            <button class="seg-btn" data-socmode="audio" type="button">Extract Audio (MP3)</button>
+                        </div>
+
+                        <!-- Type Filters (All / Videos / Photos) -->
+                        <div class="social-type-pills" id="social-type-pills">
+                            <button class="soc-pill-btn active" data-filter="all" type="button">All (<span id="pill-cnt-all">0</span>)</button>
+                            <button class="soc-pill-btn" data-filter="video" type="button">Videos (<span id="pill-cnt-video">0</span>)</button>
+                            <button class="soc-pill-btn" data-filter="image" type="button">Photos (<span id="pill-cnt-image">0</span>)</button>
+                        </div>
+
+                        <!-- Select All Checkbox -->
+                        <label class="select-all-toggle" style="margin-left: auto;">
+                            <input type="checkbox" id="social-select-all" checked>
+                            <span class="custom-check"></span>
+                            <span>Select All (<span id="social-sel-count">0</span>)</span>
+                        </label>
+                    </div>
+
+                    <!-- Output Format & Organization Controls -->
+                    <div class="social-options-row">
+                        <!-- Media Format Options -->
+                        <div class="opt-group" id="group-soc-vid"><label>Video Format</label><div class="sel-wrap"><select id="social-vid-format"><option value="mp4">MP4 (Best Compatible)</option><option value="mkv">MKV</option><option value="webm">WEBM</option><option value="mov">MOV</option><option value="avi">AVI</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div></div>
+                        <div class="opt-group" id="group-soc-img"><label>Image Format</label><div class="sel-wrap"><select id="social-img-format"><option value="original">Original Quality</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WEBP</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div></div>
+
+                        <!-- Audio Format Option (Hidden unless audio mode) -->
+                        <div class="opt-group hidden" id="group-soc-aud"><label>Audio Format</label><div class="sel-wrap"><select id="social-aud-format"><option value="mp3">MP3 (High Quality 320k)</option><option value="m4a">M4A (AAC)</option><option value="wav">WAV (Lossless)</option><option value="flac">FLAC (Lossless)</option><option value="opus">Opus</option></select><svg class="sel-arr" viewBox="0 0 20 20" fill="currentColor"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg></div></div>
+
+                        <!-- Folder Organization Toggles -->
+                        <div class="opt-group" style="flex-direction:row; align-items:center; gap:8px; margin-top:20px;">
+                            <input type="checkbox" id="social-subfolder" style="width:18px; height:18px; cursor:pointer;" checked>
+                            <label for="social-subfolder" style="cursor:pointer; margin:0; text-transform:none; font-size:0.8rem; color:var(--text-2);">Save in Creator Folder (@username)</label>
+                        </div>
+                    </div>
+
+                    <!-- Gallery Grid -->
+                    <div class="social-grid" id="social-grid"></div>
+
+                    <!-- Action Button & Live Batch Progress -->
+                    <button class="action-btn" id="social-dl-btn" type="button" style="margin-top:24px;">
+                        <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3v12m0 0l-4.5-4.5M11 15l4.5-4.5M3 17v2a1 1 0 001 1h14a1 1 0 001-1v-2"/></svg>
+                        <span>DOWNLOAD SELECTED</span>
+                        <div class="btn-spinner" hidden></div>
+                    </button>
+
+                    <!-- Live Batch Progress Bar -->
+                    <div id="social-batch-progress" class="social-batch-progress-box hidden">
+                        <div class="social-batch-head">
+                            <span id="social-batch-status">Downloading items…</span>
+                            <span id="social-batch-counter">1 / 1</span>
+                        </div>
+                        <div class="dl-track"><div id="social-batch-fill" class="dl-fill" style="width:0%"></div></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── BROWSER SNIFFER TAB ───────────────────────── -->
+        <section id="panel-sniffer" class="tab-panel">
+            <div class="panel-card glass-panel sniffer-panel">
+                <div class="sniffer-hero">
+                    <div class="sniffer-hero-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="section-label" style="margin-bottom:2px; font-size:1.05rem;">Web Player & Anime Stream Sniffer</h3>
+                        <p class="sniffer-subtext">Open any anime or streaming website. When you click play, Horizon automatically catches the 1080p stream for instant download!</p>
+                    </div>
+                </div>
+
+                <!-- URL Bar & Launch Controls -->
+                <div class="sniffer-controls-row">
+                    <div class="url-wrap sniffer-url-wrap">
+                        <svg class="url-ico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3"/><path d="M10 3a7 7 0 017 7"/></svg>
+                        <input class="url-input" id="sniffer-url" type="url" placeholder="Enter anime or streaming site URL (e.g. aniwaves.ru, 9anime, mega...)…" autocomplete="off" spellcheck="false" value="https://aniwaves.ru">
+                    </div>
+                    <button class="action-btn sniffer-launch-btn" id="sniffer-launch-btn" type="button">
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 10 5 17 5 3"/></svg>
+                        <span>Launch Browser</span>
+                    </button>
+                    <button class="sniffer-close-btn" id="sniffer-close-btn" type="button" style="display:none;" title="Close Sniffer Browser Window">
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><line x1="15" y1="5" x2="5" y2="15"/><line x1="5" y1="5" x2="15" y2="15"/></svg>
+                        <span>Close Browser</span>
+                    </button>
+                </div>
+
+                <!-- Status & Bookmark Chips -->
+                <div class="sniffer-status-row">
+                    <div class="sniffer-status-badge" id="sniffer-status-badge">
+                        <span class="sniffer-status-dot"></span>
+                        <span id="sniffer-status-text">Browser: Idle (Click Launch)</span>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="sniffer-view-logs-btn" type="button" style="font-size:0.75rem; padding:4px 10px; border-radius:6px; cursor:pointer;" title="View real-time browser monitor logs">
+                        Live Terminal Logs ❯
+                    </button>
+                    <div class="sniffer-presets">
+                        <span class="preset-label">Quick Sites:</span>
+                        <button class="preset-chip" data-url="https://aniwaves.ru" type="button">Aniwaves</button>
+                        <button class="preset-chip" data-url="https://9animetv.to" type="button">9Anime</button>
+                        <button class="preset-chip" data-url="https://hianime.to" type="button">HiAnime</button>
+                        <button class="preset-chip" data-url="https://kissanime.com.ru" type="button">KissAnime</button>
+                    </div>
+                </div>
+
+                <hr class="setting-divider" style="margin:20px 0;">
+
+                <!-- Detected Streams Section -->
+                <div class="sniffer-streams-header">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <h4 style="font-size:0.95rem; font-weight:600; color:var(--text-1); margin:0;">Captured Video Streams</h4>
+                        <span class="streams-count-pill" id="sniffer-streams-count">0</span>
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn btn-secondary btn-sm" id="sniffer-paste-direct" type="button" style="font-size:0.75rem; padding:4px 10px; border-radius:6px; cursor:pointer;">
+                            + Add Stream Link
+                        </button>
+                        <button class="btn btn-secondary btn-sm" id="sniffer-clear-streams" type="button" style="font-size:0.75rem; padding:4px 10px; border-radius:6px; cursor:pointer;">
+                            Clear List
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Streams List Container -->
+                <div class="sniffer-streams-list" id="sniffer-streams-list">
+                    <!-- Empty State -->
+                    <div class="sniffer-empty-state" id="sniffer-empty-state">
+                        <div class="radar-pulse"></div>
+                        <p class="empty-title">Waiting for video stream...</p>
+                        <p class="empty-desc">Click "Launch Browser", open your video page, select your audio (Sub/Dub), and hit Play. Captured video streams will appear here automatically.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── THUMBNAIL TAB ──────────────────────────── -->
+        <section id="panel-thumbnail" class="tab-panel">
+            <div class="panel-card glass-panel thumbnail-panel">
+                <div class="thumb-hero">
+                    <div class="thumb-hero-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                        </svg>
+                    </div>
+                    <div class="thumb-hero-text">
+                        <h2>Thumbnail & Cover Art Extractor</h2>
+                        <p>Extract Ultra HD (4K / 1080p) thumbnails & album art from YouTube, Instagram, TikTok, Twitter/X, Twitch, Pinterest, and web videos.</p>
+                    </div>
+                </div>
+
+                <!-- Input Row -->
+                <div class="url-row" style="margin-top:16px;">
+                    <div class="url-wrap">
+                        <svg class="url-ico" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                            <path d="M8.5 11.5a4 4 0 005.66.35l2.5-2.5a4 4 0 00-5.66-5.66L9.6 5.1"/>
+                            <path d="M11.5 8.5a4 4 0 00-5.66-.35l-2.5 2.5a4 4 0 005.66 5.66l1.4-1.4"/>
+                        </svg>
+                        <input class="url-input" id="thumb-url" type="url" placeholder="Paste YouTube, Instagram, TikTok, or video URL…" autocomplete="off" spellcheck="false">
+                    </div>
+                    <button class="paste-btn" data-target="thumb-url" type="button">
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="8" height="4" rx="1"/><rect x="3" y="4" width="14" height="14" rx="2"/></svg>
+                        Paste
+                    </button>
+                    <button class="fetch-btn" id="thumb-fetch-btn" type="button">
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/></svg>
+                        <span>Fetch Thumbnail</span>
+                        <div class="btn-spinner sm" hidden></div>
+                    </button>
+                </div>
+
+                <!-- Fetch Loader -->
+                <div id="thumb-loader" class="pl-loader" style="display:none; margin: 20px 0;">
+                    <div class="spinner-ring"></div>
+                    <p style="margin-left: 10px;">Extracting high-resolution thumbnails…</p>
+                </div>
+
+                <!-- Thumbnail Result Card (Initially hidden) -->
+                <div id="thumb-result-card" class="thumb-result-card glass-panel" style="display:none; margin-top:20px;">
+                    <div class="thumb-meta-header">
+                        <div class="thumb-title-wrap">
+                            <span class="thumb-platform-badge" id="thumb-platform">YouTube</span>
+                            <h3 id="thumb-title" class="thumb-media-title">Video Title</h3>
+                            <span id="thumb-uploader" class="thumb-uploader-name">Channel Name</span>
+                        </div>
+                    </div>
+
+                    <!-- Main Image Preview Container -->
+                    <div class="thumb-preview-wrap">
+                        <img id="thumb-preview-img" src="" alt="Thumbnail Preview" class="thumb-preview-img">
+                        <div class="thumb-res-overlay" id="thumb-res-badge">1920 × 1080 (Ultra HD)</div>
+                    </div>
+
+                    <!-- Available Resolutions / Sizes -->
+                    <div class="thumb-options-row">
+                        <label class="thumb-opt-label">Available Qualities:</label>
+                        <div class="thumb-chips-container" id="thumb-chips">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="thumb-actions-bar">
+                        <button class="btn btn-primary" id="thumb-btn-download-jpg" type="button">
+                            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 3v10m0 0l-4-4m4 4l4-4M3 15v2a1 1 0 001 1h12a1 1 0 001-1v-2"/></svg>
+                            <span>Download JPG</span>
+                        </button>
+                        <button class="btn btn-secondary" id="thumb-btn-download-png" type="button">
+                            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 3v10m0 0l-4-4m4 4l4-4M3 15v2a1 1 0 001 1h12a1 1 0 001-1v-2"/></svg>
+                            <span>Download PNG (Lossless)</span>
+                        </button>
+                        <button class="btn btn-secondary" id="thumb-btn-copy" type="button">
+                            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M4 13V5a2 2 0 012-2h8"/></svg>
+                            <span id="thumb-copy-label">Copy to Clipboard</span>
+                        </button>
+                        <a class="btn btn-secondary" id="thumb-btn-open" href="#" target="_blank" rel="noopener noreferrer">
+                            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 3h6v6M10 10l7-7M7 5H4a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-3"/></svg>
+                            <span>Open Full Size</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div class="sniffer-empty-state" id="thumb-empty-state" style="margin-top:20px;">
+                    <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.2" style="width:48px; height:48px; opacity:0.3; margin-bottom:12px;">
+                        <rect x="8" y="10" width="48" height="44" rx="4"/>
+                        <circle cx="22" cy="24" r="5"/>
+                        <path d="M56 42l-14-14-18 18"/>
+                        <path d="M36 44l6-6 14 14"/>
+                    </svg>
+                    <p class="empty-title">No thumbnail loaded</p>
+                    <p class="empty-desc">Paste any video or social media link above to extract the maximum resolution thumbnail or album cover.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── HISTORY TAB ────────────────────────────── -->
+        <section id="panel-history" class="tab-panel">
+            <div class="panel-card glass-panel">
+                <div class="history-header-toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
+                    <div style="display:flex; align-items:center; gap:14px;">
+                        <h3 class="section-label" style="margin-bottom:0;">Download History</h3>
+                        <div class="view-toggle-group">
+                            <button id="hist-view-grid" class="view-toggle-btn active" type="button" title="Visual Cards View">
+                                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/></svg>
+                                <span>Cards</span>
+                            </button>
+                            <button id="hist-view-table" class="view-toggle-btn" type="button" title="Compact Table View">
+                                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="15" x2="17" y2="15"/></svg>
+                                <span>Table</span>
+                            </button>
+                        </div>
+                        <div class="view-toggle-group" id="hist-group-toggle" style="margin-left:4px;">
+                            <button id="hist-group-containers" class="view-toggle-btn active" type="button" title="Group batch & creator downloads into containers">
+                                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 4a1 1 0 011-1h4l2 2h6a1 1 0 011 1v2H3V4z"/><path d="M3 8h14v8a1 1 0 01-1 1H4a1 1 0 01-1-1V8z"/></svg>
+                                <span>Collections</span>
+                            </button>
+                            <button id="hist-group-all" class="view-toggle-btn" type="button" title="Show all items individually">
+                                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="6" x2="16" y2="6"/><line x1="4" y1="10" x2="16" y2="10"/><line x1="4" y1="14" x2="16" y2="14"/></svg>
+                                <span>All Items</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button id="btn-clear-history" class="btn btn-secondary btn-sm" style="font-size:0.8rem; padding:6px 14px; display:inline-flex; align-items:center; gap:6px; border-radius:6px; cursor:pointer;" title="Clear entire download history">
+                            <svg style="width:14px; height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            Clear History
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Visual Grid / Card View -->
+                <div id="history-grid-container" class="history-grid-view">
+                    <div style="grid-column:1/-1; padding:32px; text-align:center; color:var(--text-3);">Loading history…</div>
+                </div>
+
+                <!-- Table View -->
+                <div id="history-table-container" style="display:none; overflow-x:auto;">
+                    <table class="history-table" style="width:100%; border-collapse:collapse; text-align:left;">
+                        <thead>
+                            <tr style="border-bottom:1px solid var(--border); color:var(--text-2); font-size:0.9rem;">
+                                <th style="padding:12px 8px; width:10%;">Preview</th>
+                                <th style="padding:12px 8px; width:14%;">Date</th>
+                                <th style="padding:12px 8px; width:36%;">Title / File</th>
+                                <th style="padding:12px 8px; width:18%;">Source URL</th>
+                                <th style="padding:12px 8px; width:8%;">Status</th>
+                                <th style="padding:12px 8px; width:14%; text-align:right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-rows">
+                            <tr><td colspan="6" style="padding:20px; text-align:center; color:var(--text-3);">Loading history…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── LOG TAB ────────────────────────────────── -->
+        <section id="panel-log" class="tab-panel">
+            <div class="panel-card glass-panel log-panel">
+                <div class="log-header"><span>Terminal Output</span><button class="log-clear-btn" id="log-clear" type="button">Clear</button></div>
+                <pre class="log-output" id="log-output"><span class="log-muted">Waiting for activity…</span></pre>
+            </div>
+        </section>
+
+        <!-- ── SETTINGS TAB ───────────────────────────── -->
+        <section id="panel-settings" class="tab-panel">
+            <div class="panel-card glass-panel settings-panel">
+                <h3 class="section-label">Preferences</h3>
+                <div class="setting-row"><label>Save Directory</label><div class="setting-ctrl"><input id="set-dir" type="text" placeholder="Default (~/Downloads)" class="setting-input"><button class="browse-btn" id="set-dir-browse" type="button">Browse</button></div></div>
+                <div class="setting-row"><label>Social Media Directory</label><div class="setting-ctrl"><input id="set-social-dir" type="text" placeholder="Default (~/Downloads/SocialMedia)" class="setting-input"><button class="browse-btn" id="set-social-dir-browse" type="button">Browse</button></div></div>
+                <div class="setting-row cookie-setting-row">
+                    <label>Master Cookie Vault</label>
+                    <div class="setting-ctrl">
+                        <input id="set-cookie" type="text" placeholder="Upload or merge cookies (.txt / .json)" class="setting-input">
+                        <button class="browse-btn" id="set-cookie-browse" type="button" title="Upload and auto-merge cookies">Merge / Add</button>
+                        <button class="browse-btn clear-cookie-btn" id="set-cookie-clear" type="button" title="Clear all saved cookies">Clear</button>
+                    </div>
+                </div>
+                <div class="setting-row cookie-status-row">
+                    <label></label>
+                    <div class="setting-ctrl">
+                        <div class="cookie-badges-container">
+                            <span class="cookie-badge" id="cookie-badge-yt"><i class="badge-dot"></i> 🔴 YouTube: <b id="cookie-status-yt">Checking...</b></span>
+                            <span class="cookie-badge" id="cookie-badge-ig"><i class="badge-dot"></i> 🟣 Instagram: <b id="cookie-status-ig">Checking...</b></span>
+                            <span class="cookie-badge" id="cookie-badge-other" style="display:none;"><i class="badge-dot"></i> 🌐 Other: <b id="cookie-status-other">0</b></span>
+                        </div>
+                        <p class="cookie-vault-hint">Auto-Merge Vault: uploading Instagram cookies preserves YouTube cookies and vice-versa.</p>
+                    </div>
+                </div>
+                <div class="setting-row"><label>Proxy URL</label><div class="setting-ctrl"><input id="set-proxy" type="text" placeholder="http://proxy:port (optional)" class="setting-input"></div></div>
+                <div class="setting-row"><label>Accent Theme</label><div class="setting-ctrl"><div class="theme-swatches"><span class="swatch active" data-theme="violet-cyan" style="background:linear-gradient(135deg,#8b5cf6,#06b6d4)"></span><span class="swatch" data-theme="spotify" style="background:#1db954"></span><span class="swatch" data-theme="crimson" style="background:#e11d48"></span><span class="swatch" data-theme="amber" style="background:#d97706"></span><span class="swatch" data-theme="aurora" style="background:linear-gradient(135deg,#a8ff78,#78ffd6)"></span></div></div></div>
+                <div class="setting-row"><label>GPU Hardware Acceleration</label><div class="setting-ctrl"><label class="select-all-toggle"><input type="checkbox" id="set-gpu"><span class="custom-check"></span><span>Enable NVENC (NVIDIA GPU)</span></label></div></div>
+                <div class="setting-row"><label>Max Concurrent Downloads</label><div class="setting-ctrl"><input id="set-concurrent" type="number" min="1" max="20" value="10" class="setting-input short"></div></div>
+                <div class="setting-row"><label>Developer Mode (Verbose Logging)</label><div class="setting-ctrl"><label class="select-all-toggle"><input type="checkbox" id="set-dev"><span class="custom-check"></span><span>Enable verbose terminal output</span></label></div></div>
+                
+                <hr class="setting-divider">
+                <h3 class="section-label">⚡ Creator Watchlist & Auto-Inventory Sync</h3>
+                <p class="setting-desc-sub" style="font-size:0.85rem; color:var(--text-3); margin-top:-6px; margin-bottom:14px; line-height:1.5;">Add Instagram, TikTok, or YouTube creator usernames or profile URLs. "Sync Inventory" checks all added creators and downloads <strong>only new</strong> posts & reels, automatically skipping previously downloaded media.</p>
+                <div class="watchlist-input-row" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+                    <input id="set-creator-input" type="text" placeholder="e.g. @therock or instagram.com/therock" class="setting-input" style="flex:1; min-width:220px;">
+                    <button class="btn btn-secondary" id="btn-add-creator" type="button" style="padding:8px 16px; font-weight:600;">+ Add Creator</button>
+                    <button class="btn btn-accent" id="btn-sync-inventory" type="button" style="padding:8px 18px; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+                        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" style="width:16px; height:16px;"><path d="M13 2L3 14h6l-2 6 10-12h-6l2-6z"/></svg>
+                        <span>Sync Inventory</span>
+                    </button>
+                </div>
+                <div id="creator-chips-list" class="creator-chips-container" style="display:flex; flex-wrap:wrap; gap:8px; min-height:36px; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px dashed var(--border); border-radius:8px;">
+                    <span class="empty-chips-hint" style="color:var(--text-3); font-size:0.85rem; align-self:center;">No creators added yet. Add a username above!</span>
+                </div>
+                <div id="sync-inventory-progress" class="sync-progress-box" style="display:none; margin-top:12px; padding:10px 14px; background:rgba(139,92,246,0.1); border:1px solid rgba(139,92,246,0.25); border-radius:8px;">
+                    <div style="display:flex; align-items:center; gap:10px; color:var(--text-1); font-size:0.88rem;">
+                        <div class="spinner-ring sm" style="width:16px; height:16px;"></div>
+                        <span id="sync-status-text">Scanning creators inventory…</span>
+                    </div>
+                </div>
+
+                <hr class="setting-divider">
+                <h3 class="section-label">🚀 Windows Startup & Network Access</h3>
+                <div class="setting-row">
+                    <label>Run on Windows Startup</label>
+                    <div class="setting-ctrl">
+                        <label class="select-all-toggle">
+                            <input type="checkbox" id="set-startup">
+                            <span class="custom-check"></span>
+                            <span>Launch silently in background when Windows boots (ready for instant downloads)</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="setting-row">
+                    <label>Preferred Port</label>
+                    <div class="setting-ctrl">
+                        <input id="set-preferred-port" type="number" min="80" max="65535" placeholder="80 or 8080 (Default: auto-probe 80, 8080)" class="setting-input short">
+                        <button class="browse-btn" id="btn-save-port" type="button">Save Port</button>
+                    </div>
+                </div>
+
+                <hr class="setting-divider">
+                <h3 class="section-label">Maintenance & Updates</h3>
+                <div class="setting-row">
+                    <label>Horizon Software Update</label>
+                    <div class="setting-ctrl">
+                        <button class="update-btn" id="btn-check-app-update" type="button" style="background:linear-gradient(135deg, rgba(139,92,246,0.25), rgba(6,182,212,0.25)); border:1px solid var(--accent);">
+                            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 10a6 6 0 0111.65-2M16 10a6 6 0 01-11.65 2"/><polyline points="16 4 16 10 10 10"/></svg>
+                            <span>Check for Horizon Updates</span>
+                            <div class="btn-spinner sm" id="update-check-spinner" hidden></div>
+                        </button>
+                    </div>
+                </div>
+                <div id="app-update-container" style="display:none; margin:12px 0;"></div>
+
+                <div class="setting-row"><label>Update yt-dlp to latest version</label><div class="setting-ctrl"><button class="update-btn" id="update-ytdlp-btn" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 10a6 6 0 0111.65-2M16 10a6 6 0 01-11.65 2"/><polyline points="16 4 16 10 10 10"/></svg><span>Update yt-dlp</span><div class="btn-spinner sm" hidden></div></button></div></div>
+                <pre class="update-output" id="update-output" style="display:none"></pre>
+            </div>
+        </section>
+
+        <!-- ── ABOUT TAB ──────────────────────────────── -->
+        <section id="panel-about" class="tab-panel">
+            <div class="panel-card glass-panel about-panel">
+                <div class="about-brand">
+                    <svg viewBox="0 0 48 48" fill="none"><path d="M24 4L44 14v20L24 44 4 34V14l20-10z" stroke="url(#abg)" stroke-width="1.5"/><path d="M17 23l5 5 9-10" stroke="url(#abg)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="abg" x1="0" y1="0" x2="48" y2="48"><stop stop-color="#8b5cf6"/><stop offset="1" stop-color="#06b6d4"/></linearGradient></defs></svg>
+                    <h2>Horizon Video Downloader</h2>
+                    <span class="about-ver">Version 5.2</span>
+                </div>
+                <p class="about-desc">High-performance, portable media downloader with selective playlist support. Powered by yt-dlp and Deno.</p>
+                <div class="about-stack"><span>Python</span><span>Starlette</span><span>yt-dlp</span><span>Deno</span><span>WebSockets</span></div>
+                
+                <hr style="border:none; border-top:1px solid var(--border); margin:20px 0;">
+                
+                <div class="about-creator" style="text-align:center;">
+                    <p style="color:var(--text-1); font-weight:500; margin-bottom:12px;">Made with ❤️ by Umar Aslam</p>
+                    <div style="display:flex; justify-content:center; align-items:center; gap:16px; margin-bottom:16px;">
+                        <a href="https://www.instagram.com/_omar_aslam_/" target="_blank" style="display:inline-block; border-radius:10px; overflow:hidden; transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'" title="Instagram Profile">
+                            <img src="/img/instagram_icon.jpg" alt="Instagram" style="width:36px; height:36px; display:block; border-radius:8px;">
+                        </a>
+                        <a href="https://github.com/umaraslam282" target="_blank" style="color:var(--text-2); transition:color 0.2s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-2)'" title="GitHub Profile">
+                            <svg viewBox="0 0 24 24" fill="currentColor" style="width:32px; height:32px;"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+                        </a>
+                        <a href="mailto:realumaraslam@gmail.com" style="color:var(--text-2); transition:color 0.2s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-2)'" title="Email Me">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:30px; height:30px;"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        </a>
+                    </div>
+                    <span style="font-size:0.78rem; color:var(--text-3); display:block; margin-top:8px;">Creation Date & Time: July 30, 2026, 02:46:41 AM (Local)</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════════ DOWNLOADS (ALWAYS VISIBLE) ═══════════════════ -->
+        <section class="downloads-section">
+            <div class="downloads-header"><h2>Downloads</h2><span class="dl-count" id="dl-count" hidden>0</span></div>
+            <div id="download-list" class="download-list"></div>
+            <div class="empty-state" id="empty-state">
+                <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="8" y="14" width="48" height="36" rx="4" opacity=".15"/><path d="M32 26v12m0 0l-5-5m5 5l5-5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".25"/></svg>
+                <p>No downloads yet</p><span>Start a download to see progress here</span>
+            </div>
+        </section>
+
+    </main>
+</div>
+
+<!-- QR Code Modal -->
+<div id="qr-modal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.65); backdrop-filter:blur(6px); z-index:9999; justify-content:center; align-items:center;">
+    <div class="modal-content glass-panel" style="background:var(--bg-1); padding:24px; border-radius:14px; position:relative; max-width:380px; width:90%; text-align:center; box-shadow:0 12px 36px rgba(0,0,0,0.5); border:1px solid var(--border);">
+        <button id="qr-close" type="button" style="position:absolute; top:12px; right:12px; background:none; border:none; color:var(--text-2); cursor:pointer; padding:4px;" title="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:22px; height:22px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <h3 style="margin-top:4px; margin-bottom:8px; font-weight:700; font-size:1.15rem;">Mobile Transfer</h3>
+        <p style="color:var(--text-2); font-size: 0.85rem; margin-bottom: 14px;">Scan with your phone camera or visit the link on your local Wi-Fi.</p>
+        <div style="background: #ffffff; padding: 12px; border-radius: 10px; display:inline-block; margin-bottom:12px;">
+            <img id="qr-image" src="" alt="Loading QR code..." style="width: 200px; height: 200px; display: block; object-fit: contain;">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+            <input id="qr-url-input" type="text" readonly style="width: 100%; padding: 8px 10px; background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; color: var(--text-1); font-size: 0.82rem; text-align: center;" onclick="this.select();">
+            <button id="qr-copy-btn" type="button" class="action-btn compact" style="margin: 0; width: 100%;"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" style="width:16px;height:16px;margin-right:6px;"><rect x="6" y="2" width="8" height="4" rx="1"/><rect x="3" y="4" width="14" height="14" rx="2"/></svg><span>Copy Link</span></button>
+        </div>
+    </div>
+</div>
+
+<!-- Social Media Preview Lightbox Modal -->
+<div id="social-lightbox-modal" class="social-lightbox hidden">
+    <div class="lightbox-backdrop" id="lightbox-backdrop"></div>
+    <div class="lightbox-content glass-panel">
+        <div class="lightbox-header">
+            <div class="lightbox-title-wrap">
+                <span id="lightbox-type-badge" class="soc-pill-badge">PREVIEW</span>
+                <span id="lightbox-title" class="lightbox-title-text">Media Item</span>
+            </div>
+            <button class="lightbox-close" id="lightbox-close-btn" type="button" title="Close Preview">&times;</button>
+        </div>
+        <div id="lightbox-media-container" class="lightbox-media-container"></div>
+        <div class="lightbox-footer">
+            <button class="action-btn compact" id="lightbox-copy-btn" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" style="width:15px;height:15px;margin-right:4px;"><rect x="6" y="2" width="8" height="4" rx="1"/><rect x="3" y="4" width="14" height="14" rx="2"/></svg>Copy Link</button>
+            <button class="action-btn compact" id="lightbox-dl-btn" type="button"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:4px;"><path d="M11 3v12m0 0l-4.5-4.5M11 15l4.5-4.5M3 17v2a1 1 0 001 1h14a1 1 0 001-1v-2"/></svg>Download This Item</button>
+        </div>
+    </div>
+</div>
+
+<!-- Glassmorphic In-App Folder Picker Modal -->
+<div id="folder-picker-modal" class="modal-backdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.78); backdrop-filter:blur(8px); z-index:99999; align-items:center; justify-content:center;">
+    <div class="modal-dialog glass-panel" style="width:92%; max-width:640px; background:#121218; border:1px solid rgba(139,92,246,0.38); border-radius:14px; box-shadow:0 20px 50px rgba(0,0,0,0.7); overflow:hidden; display:flex; flex-direction:column; max-height:86vh;">
+        <!-- Header -->
+        <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02);">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:36px; height:36px; border-radius:8px; background:var(--accent-dim); color:var(--accent); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" style="width:19px; height:19px;"><path d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+                </div>
+                <div>
+                    <h3 id="fp-modal-title" style="margin:0; font-size:1.05rem; font-weight:700; color:var(--text-1);">Choose Destination Folder</h3>
+                    <p style="margin:2px 0 0; font-size:0.75rem; color:var(--text-3);">Select where downloaded files will be saved on your computer</p>
+                </div>
+            </div>
+            <button type="button" id="fp-modal-close" style="background:transparent; border:none; color:var(--text-3); font-size:1.5rem; line-height:1; cursor:pointer; padding:4px 8px; border-radius:6px;">&times;</button>
+        </div>
+
+        <!-- Shortcuts Bar -->
+        <div style="padding:10px 18px; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; gap:8px; flex-wrap:wrap; background:rgba(0,0,0,0.22); align-items:center;">
+            <span style="font-size:0.72rem; color:var(--text-3); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Drives:</span>
+            <div id="fp-drives-list" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+            <span style="font-size:0.72rem; color:var(--text-3); font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-left:8px;">Quick:</span>
+            <div id="fp-shortcuts-list" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+        </div>
+
+        <!-- Current Path Navigation Bar -->
+        <div style="padding:10px 18px; display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.02); border-bottom:1px solid var(--border);">
+            <button type="button" id="fp-nav-up" class="btn btn-secondary btn-sm" style="height:32px; padding:0 10px; display:inline-flex; align-items:center; gap:4px; font-size:0.78rem; border-radius:6px; cursor:pointer;" title="Go up to parent folder">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" style="width:13px; height:13px;"><path d="M10 16V4m0 0l-5 5m5-5l5 5"/></svg>
+                Up
+            </button>
+            <input type="text" id="fp-current-path-input" class="url-input" style="flex:1; height:32px; font-size:0.8rem; padding:0 10px; background:rgba(0,0,0,0.4);" placeholder="C:\Users\...">
+            <button type="button" id="fp-nav-go" class="btn btn-secondary btn-sm" style="height:32px; padding:0 10px; font-size:0.78rem; border-radius:6px; cursor:pointer;">Go</button>
+            <button type="button" id="fp-nav-mkdir" class="btn btn-secondary btn-sm" style="height:32px; padding:0 10px; font-size:0.78rem; border-radius:6px; cursor:pointer;" title="Create new subfolder">+ Folder</button>
+        </div>
+
+        <!-- Folder List Area -->
+        <div id="fp-folder-list" style="flex:1; overflow-y:auto; padding:8px 14px; min-height:230px; max-height:360px; display:flex; flex-direction:column; gap:4px; background:rgba(0,0,0,0.15);">
+            <!-- Folders rendered here dynamically -->
+        </div>
+
+        <!-- Footer Actions -->
+        <div style="padding:14px 20px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:12px; background:rgba(255,255,255,0.02);">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <button type="button" id="fp-open-explorer-btn" class="btn btn-secondary btn-sm" style="font-size:0.76rem; padding:6px 12px; display:inline-flex; align-items:center; gap:5px; border-radius:6px; cursor:pointer;" title="Open this location in Windows Explorer">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px; height:13px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    Explorer
+                </button>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <button type="button" id="fp-cancel-btn" class="btn btn-secondary" style="font-size:0.84rem; padding:7px 16px; border-radius:6px; cursor:pointer;">Cancel</button>
+                <button type="button" id="fp-select-btn" class="btn btn-primary" style="font-size:0.84rem; padding:7px 20px; font-weight:700; background:linear-gradient(135deg, #8b5cf6, #06b6d4); color:#fff; border:none; border-radius:8px; cursor:pointer;">
+                    ✔ Select This Folder
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toast-container" class="toast-container"></div>
+<script src="/js/app.js?v=5.2.1"></script>
+</body>
+</html>

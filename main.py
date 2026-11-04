@@ -51,7 +51,7 @@ if sys.platform == "win32":
     try:
         import ctypes
         if ctypes.windll.kernel32.GetConsoleWindow():
-            ctypes.windll.kernel32.SetConsoleTitleW("Horizon Video Downloader v5.1")
+            ctypes.windll.kernel32.SetConsoleTitleW("hvd.com (Horizon Video Downloader)")
     except Exception:
         pass
 
@@ -107,9 +107,11 @@ def main() -> None:
     logger.info(f"  {APP_NAME} v{APP_VERSION}")
     logger.info(f"{'=' * 56}")
 
-    # ── Resolve port ──────────────────────────────────────────
+    # ── Resolve port & URL ────────────────────────────────────
     port = find_available_port()
     local_url = f"http://{LOCAL_HOST}:{port}"
+    # Use localhost so Chrome/Edge treat the app as a Secure Context (no 'Not Secure' badge and 1-click clipboard)
+    browser_url = f"http://localhost" if port == 80 else f"http://localhost:{port}"
     logger.info(f"Port resolved: {port}")
 
     # ── Create app ────────────────────────────────────────────
@@ -144,11 +146,15 @@ def main() -> None:
         sys.exit(1)
 
     # ── Open browser ──────────────────────────────────────────
-    logger.info(f"Opening browser -> {local_url}")
-    try:
-        webbrowser.open(local_url)
-    except Exception as e:
-        logger.warning(f"Could not open browser automatically: {e}")
+    silent_mode = "--silent" in sys.argv
+    if silent_mode:
+        logger.info(f"Started in silent background mode (Windows Startup) at {browser_url} - skipping browser launch.")
+    else:
+        logger.info(f"Opening browser -> {browser_url}")
+        try:
+            webbrowser.open(browser_url)
+        except Exception as e:
+            logger.warning(f"Could not open browser automatically: {e}")
 
     # ── Block main thread ─────────────────────────────────────
     # The daemon thread keeps Uvicorn running. We block here so

@@ -17,7 +17,7 @@ from typing import Any
 
 # ── Application Metadata ──────────────────────────────────────────────
 APP_NAME = "Horizon Video Downloader"
-APP_VERSION = "5.1.0"
+APP_VERSION = "5.2.0"
 APP_ID = "hvd"
 
 # ── Runtime Path Resolution ───────────────────────────────────────────
@@ -175,9 +175,24 @@ SUBPROCESS_FLAGS: int = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
 def find_available_port() -> int:
     """
     Probe preferred ports in order and return the first available one.
+    Checks user-specified port in settings.json first if defined.
     Falls back to an OS-assigned ephemeral port if none are free.
     """
-    for port in PREFERRED_PORTS:
+    settings = load_settings()
+    custom_port = settings.get("preferred_port")
+    ports_to_check = []
+    if custom_port:
+        try:
+            cp = int(custom_port)
+            if 1 <= cp <= 65535:
+                ports_to_check.append(cp)
+        except Exception:
+            pass
+    for p in PREFERRED_PORTS:
+        if p not in ports_to_check:
+            ports_to_check.append(p)
+
+    for port in ports_to_check:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                 sock.bind((BIND_HOST, port))

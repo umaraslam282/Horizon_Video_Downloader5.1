@@ -93,6 +93,7 @@ class DownloadTask:
     proxy: str | None = None
     referer: str | None = None
     custom_title: str | None = None
+    thumbnail: str | None = None
     status: str = "queued"
     # Possible statuses:
     #   queued → downloading → completed
@@ -145,6 +146,7 @@ class DownloadTask:
             "gpu_acceleration": self.gpu_acceleration,
             "proxy": self.proxy,
             "referer": self.referer,
+            "thumbnail": self.thumbnail,
         }
 
 
@@ -296,6 +298,7 @@ class DownloadManager:
         proxy: str | None = None,
         referer: str | None = None,
         custom_title: str | None = None,
+        thumbnail: str | None = None,
     ) -> str:
         """
         Create and start a new download task.
@@ -323,10 +326,11 @@ class DownloadManager:
                 proxy=proxy,
                 referer=referer,
                 custom_title=custom_title,
+                thumbnail=thumbnail,
                 filename=custom_title if custom_title else None,
             )
             self._tasks[task_id] = task
-            insert_download(task_id, url)
+            insert_download(task_id, url, title=custom_title or "Initializing...", thumbnail=thumbnail)
 
         # Spawn isolated worker thread
         thread = threading.Thread(
@@ -713,7 +717,7 @@ class DownloadManager:
                             size = os.path.getsize(task.output_path)
                         except Exception:
                             pass
-                    update_download_completed(task.task_id, task.output_path or "", task.filename, size)
+                    update_download_completed(task.task_id, task.output_path or "", task.filename, size, getattr(task, "thumbnail", None))
                 else:
                     update_status(task.task_id, db_status)
                 self._broadcast_update(task)

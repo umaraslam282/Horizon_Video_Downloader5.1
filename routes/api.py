@@ -1084,18 +1084,22 @@ async def fetch_social(request: Request) -> JSONResponse:
                 dm._broadcast_log("social", f"📋 [Step 1 Complete] Feed scan found {len(final_items)} items ({grid_imgs} photos, {grid_vids} videos).")
 
             # If user explicitly gave /reels, but it was blocked by login redirect (0 items found):
-            # Fall back automatically to profile /posts so user NEVER gets 0 items!
-            if is_direct_reels and not final_items:
-                dm._broadcast_log("social", f"⚠️ Dedicated Reels tab restricted by Instagram API. Falling back to profile grid to recover all available videos for @{ig_username}...")
-                fallback_str = await asyncio.to_thread(_execute_dl, f"https://www.instagram.com/{ig_username}/posts")
-                if fallback_str:
-                    fb_info, fb_items = _parse_gallery_dl_output(fallback_str)
-                    if fb_items:
-                        final_items.extend(fb_items)
-                    if not post_info.get("fullname") and fb_info.get("fullname"):
-                        post_info["fullname"] = fb_info["fullname"]
-                fb_vids = sum(1 for it in final_items if it.get("type") == "video")
-                dm._broadcast_log("social", f"✅ Recovered {len(final_items)} items ({fb_vids} videos) from profile grid!")
+            # Fall back automatically to profile /posts so user NEVER gets 0 items, and filter ONLY to videos!
+            if is_direct_reels:
+                if not final_items:
+                    dm._broadcast_log("social", f"⚠️ Dedicated Reels tab restricted by Instagram API. Recovering all available reels from profile feed grid for @{ig_username}...")
+                    fallback_str = await asyncio.to_thread(_execute_dl, f"https://www.instagram.com/{ig_username}/posts")
+                    if fallback_str:
+                        fb_info, fb_items = _parse_gallery_dl_output(fallback_str)
+                        if fb_items:
+                            reels_only = [it for it in fb_items if it.get("type") == "video"]
+                            final_items.extend(reels_only)
+                        if not post_info.get("fullname") and fb_info.get("fullname"):
+                            post_info["fullname"] = fb_info["fullname"]
+                    dm._broadcast_log("social", f"✅ Recovered {len(final_items)} reels from profile feed grid!")
+                else:
+                    # Ensure only videos are presented for /reels
+                    final_items = [it for it in final_items if it.get("type") == "video"]
 
             # Step 2: If user gave bare profile (not /posts and not /reels), scan dedicated reels pass to catch unshared reels
             if not is_direct_reels and not is_direct_posts:

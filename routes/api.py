@@ -90,10 +90,10 @@ async def start_download(request: Request) -> JSONResponse:
 
     subtitles = body.get("subtitles", "none")
     if subtitles not in VALID_SUBTITLES:
-        return _error(f"'subtitles' must be one of: {', '.join(VALID_SUBTITLES)}")
+        subtitles = "none"
 
-    subtitle_lang = body.get("subtitle_lang", "en")
-    if subtitle_lang not in VALID_SUBTITLE_LANGS:
+    subtitle_lang = (body.get("subtitle_lang") or "en").strip()
+    if not subtitle_lang or subtitle_lang.lower().startswith("live_chat") or not re.match(r"^[a-zA-Z0-9_-]{2,15}$", subtitle_lang):
         subtitle_lang = "en"
 
     cookie_file = body.get("cookie_file")  # Optional string or None

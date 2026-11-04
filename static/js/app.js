@@ -504,6 +504,7 @@ const App={
            
            if(subSel) {
                subSel.innerHTML = subs.map(s => `<option value="${s.code}">${s.displayName}</option>`).join('');
+               if (subs.some(s => s.code === "en")) subSel.value = "en";
            }
            this.toast('Video info & subtitles loaded', 'ok');
         } else {
@@ -597,7 +598,9 @@ const App={
       body.quality=document.getElementById('s-resolution').value;
       body.video_format=document.getElementById('s-vformat').value;
       body.subtitles=document.getElementById('s-subs').value;
-      body.subtitle_lang=document.getElementById('s-sublang').value;
+      const subLangEl = document.getElementById('s-sublang');
+      const subLangVal = (subLangEl ? subLangEl.value : 'en') || 'en';
+      body.subtitle_lang = subLangVal.startsWith('live_chat') ? 'en' : subLangVal;
     }else{
       body.audio_format=document.getElementById('s-aformat').value;
     }

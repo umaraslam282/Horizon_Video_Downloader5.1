@@ -808,6 +808,8 @@ class DownloadManager:
         # ── Subtitles ─────────────────────────────────────────
         if task.subtitles != "none":
             lang = task.subtitle_lang or "en"
+            if not lang or lang.startswith("live_chat"):
+                lang = "en"
             cmd.extend(["--write-subs", "--write-auto-subs", "--sub-langs", f"{lang}.*"])
             # Embed subs into video container if video download
             if task.format_type == "video":

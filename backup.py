@@ -19,23 +19,25 @@ def make_backup():
     # Current project directory
     src_dir = Path(__file__).resolve().parent
     # Target directory (one level up)
-    dest_dir = (src_dir.parent / "complete vid downloader project").resolve()
+    dest_dir = (src_dir.parent / "Horizon_Video_Downloader_v5.2_BACKUP").resolve()
 
     print(f"Backup Initiated...")
     print(f"Source:      {src_dir}")
     print(f"Destination: {dest_dir}")
 
-    if dest_dir.exists():
-        print("Clearing old backup copy at destination...")
+    src_sub = dest_dir / "1_SOURCE_CODE"
+    src_sub.parent.mkdir(parents=True, exist_ok=True)
+
+    if src_sub.exists():
+        print("Refreshing 1_SOURCE_CODE...")
         try:
-            shutil.rmtree(dest_dir, ignore_errors=True)
+            shutil.rmtree(src_sub, ignore_errors=True)
         except Exception as e:
-            print(f"Error: Unable to remove existing backup directory: {e}")
-            sys.exit(1)
+            print(f"Warning: Could not clear existing source directory: {e}")
 
     try:
-        shutil.copytree(src_dir, dest_dir, ignore=ignore_patterns)
-        print("Backup Completed Successfully!")
+        shutil.copytree(src_dir, src_sub, ignore=ignore_patterns)
+        print("Source Code Backup Completed Successfully!")
     except Exception as e:
         print(f"Error during file copy: {e}")
         sys.exit(1)

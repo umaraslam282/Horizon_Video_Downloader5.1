@@ -50,6 +50,14 @@ cookie_file = os.path.join(project_root, "cookies.txt")
 if os.path.exists(cookie_file):
     bundled_data.append((cookie_file, "."))
 
+custom_extractors_dir = os.path.join(project_root, "custom_extractors")
+if os.path.isdir(custom_extractors_dir):
+    bundled_data.append((custom_extractors_dir, "custom_extractors"))
+
+picker_file = os.path.join(project_root, "folder_picker.py")
+if os.path.exists(picker_file):
+    bundled_data.append((picker_file, "."))
+
 # ── Analysis ─────────────────────────────────────────────────────
 a = Analysis(
     ["main.py"],

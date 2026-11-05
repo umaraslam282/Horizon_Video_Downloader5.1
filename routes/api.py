@@ -851,6 +851,7 @@ def _parse_gallery_dl_output(stdout_str: str) -> tuple[dict, list[dict]]:
             "type": "video" if is_video else "image",
             "thumbnail": display_url or target_url,
             "id": item_key,
+            "shortcode": metadata.get("post_shortcode") or metadata.get("shortcode") or metadata.get("code") or "",
             "slide_index": len(items) + 1,
         })
 
@@ -899,6 +900,26 @@ def _fetch_social_ytdlp_fallback(url: str, cookie_file: str | None = None) -> tu
         timeout=30,
         creationflags=SUBPROCESS_FLAGS,
     )
+    if res.returncode != 0 and "instagram.com" in url.lower():
+        # Instagram often blocks authenticated /info/ endpoint with 302; retry cleanly without cookies
+        cmd_nocookie = [
+            YTDLP_PATH,
+            "--dump-single-json",
+            "--no-warnings",
+            "--no-download",
+            "--no-cookies",
+            url,
+        ]
+        res = subprocess.run(
+            cmd_nocookie,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            creationflags=SUBPROCESS_FLAGS,
+        )
+
     if res.returncode != 0:
         return post_info, []
 
@@ -922,20 +943,26 @@ def _fetch_social_ytdlp_fallback(url: str, cookie_file: str | None = None) -> tu
     for idx, entry in enumerate(entries, start=1):
         if not entry:
             continue
-        media_url = entry.get("url") or entry.get("webpage_url")
+        # For Instagram videos, use webpage URL if direct stream is DASH split format
+        page_u = entry.get("webpage_url") or url
+        media_url = entry.get("url") or page_u
+        if "instagram.com" in url.lower() and (not media_url or "dash" in str(entry.get("format_id", "")).lower()):
+            media_url = page_u
+
         if not media_url or media_url in seen:
             continue
         seen.add(media_url)
 
         ext = (entry.get("ext") or "").lower()
-        is_video = ext in ("mp4", "webm", "mkv") or entry.get("vcodec") not in ("none", None)
-        thumb = entry.get("thumbnail") or media_url
+        is_video = ext in ("mp4", "webm", "mkv") or entry.get("vcodec") not in ("none", None) or "/reel" in url.lower()
+        thumb = entry.get("thumbnail") or (media_url if not is_video else "")
 
         items.append({
             "url": media_url,
             "type": "video" if is_video else "image",
             "thumbnail": thumb,
             "id": str(entry.get("id") or idx),
+            "shortcode": str(entry.get("id") or ""),
             "slide_index": idx,
         })
 
@@ -1029,8 +1056,11 @@ async def fetch_social(request: Request) -> JSONResponse:
                 gallery_dl_bin,
                 "-j",
                 "--sleep-request", "1",
-                target_u
             ]
+            custom_ext_dir = BUNDLE_DIR / "custom_extractors"
+            if custom_ext_dir.exists():
+                cmd.extend(["-X", str(custom_ext_dir)])
+            cmd.append(target_u)
             if resolved_cookie:
                 cmd.extend(["--cookies", resolved_cookie])
 
@@ -1112,12 +1142,16 @@ async def fetch_social(request: Request) -> JSONResponse:
                         if r_items:
                             existing_urls = {it["url"] for it in final_items}
                             existing_ids = {it.get("id") for it in final_items}
+                            existing_scs = {it.get("shortcode") for it in final_items if it.get("shortcode")}
                             for r_it in r_items:
-                                if r_it["url"] not in existing_urls and r_it.get("id") not in existing_ids:
+                                sc = r_it.get("shortcode")
+                                if r_it["url"] not in existing_urls and r_it.get("id") not in existing_ids and (not sc or sc not in existing_scs):
                                     final_items.append(r_it)
                                     existing_urls.add(r_it["url"])
                                     if r_it.get("id"):
                                         existing_ids.add(r_it["id"])
+                                    if sc:
+                                        existing_scs.add(sc)
                                     added_reels += 1
                     if added_reels > 0:
                         dm._broadcast_log("social", f"🎬 [Step 2 Complete] Added {added_reels} additional unshared reels from Reels tab!")
@@ -1153,6 +1187,9 @@ async def fetch_social(request: Request) -> JSONResponse:
 
     else:
         cmd = [gallery_dl_bin, "-j", "--sleep-request", "1"]
+        custom_ext_dir = BUNDLE_DIR / "custom_extractors"
+        if custom_ext_dir.exists():
+            cmd.extend(["-X", str(custom_ext_dir)])
         if "/highlights" in clean_url.lower():
             cmd.extend(["--range", "1-50"])
         cmd.append(url)
@@ -1283,18 +1320,20 @@ def _execute_download_social(
     for i, url in enumerate(urls):
         task_id = f"soc_{uuid.uuid4().hex[:8]}"
         try:
-            # Safeguard: Never save raw HTML webpage URLs as images or media
             clean_url_check = url.lower().split("?")[0]
-            if "instagram.com/" in clean_url_check and not any(cdn in clean_url_check for cdn in ("fbcdn.net", "cdninstagram.com", ".mp4", ".jpg", ".webp")):
+            is_ig_page_url = "instagram.com/" in clean_url_check and any(f"/{seg}/" in clean_url_check or clean_url_check.endswith(f"/{seg}") for seg in ("reel", "reels", "p", "tv"))
+
+            # Safeguard: Never save raw HTML webpage URLs as images or media
+            if "instagram.com/" in clean_url_check and not is_ig_page_url and not any(cdn in clean_url_check for cdn in ("fbcdn.net", "cdninstagram.com", ".mp4", ".jpg", ".webp")):
                 dm._broadcast_log("social", f"[{i+1}/{len(urls)}] Skipping non-media page URL: {url}")
                 continue
 
             parsed_url = Path(url.split("?")[0])
             url_lower = parsed_url.name.lower()
-            is_video = url_lower.endswith((".mp4", ".mkv", ".webm", ".mov", ".avi"))
+            is_video = url_lower.endswith((".mp4", ".mkv", ".webm", ".mov", ".avi")) or is_ig_page_url
 
             native_suffix = parsed_url.suffix
-            if not native_suffix or len(native_suffix) > 5:
+            if not native_suffix or len(native_suffix) > 5 or is_ig_page_url:
                 native_suffix = ".mp4" if is_video else ".jpg"
 
             # Determine target extension
@@ -1365,6 +1404,53 @@ def _execute_download_social(
             dm._broadcast_log("social", f"[{i+1}/{len(urls)}] Downloading to {type_subfolder}/: {final_filename}")
 
             creation_flags = 0x08000000 if os.name == "nt" else 0
+
+            # Direct download for Instagram Reel / Post URLs via yt-dlp (bypasses blocked info endpoints)
+            if is_ig_page_url:
+                dm._broadcast_log("social", f"[{i+1}/{len(urls)}] [yt-dlp] Downloading Instagram Reel: {final_filename}")
+                ydl_cmd = [
+                    YTDLP_PATH,
+                    "--no-cookies",
+                    "--no-warnings",
+                    "-o", str(final_file),
+                ]
+                if audio_only:
+                    ydl_cmd.extend(["-x", "--audio-format", audio_format.lower()])
+                else:
+                    ydl_cmd.extend(["-f", "bv*+ba/b", "--merge-output-format", video_format.lower()])
+                ydl_cmd.append(url)
+
+                res = subprocess.run(
+                    ydl_cmd,
+                    capture_output=True,
+                    text=True,
+                    errors="replace",
+                    timeout=180,
+                    creationflags=creation_flags
+                )
+                if res.returncode == 0 and final_file.exists():
+                    downloaded += 1
+                    update_download_completed(task_id, file_path=str(final_file.resolve()))
+                    dm._broadcast_log("social", f"[{i+1}/{len(urls)}] Download complete: {final_filename}")
+                    if hasattr(dm, "broadcast_custom_progress"):
+                        dm.broadcast_custom_progress({
+                            "type": "progress",
+                            "task_id": task_id,
+                            "filename": final_filename,
+                            "status": "completed",
+                            "progress": 100.0,
+                            "downloaded_bytes": final_file.stat().st_size,
+                            "total_bytes": final_file.stat().st_size,
+                            "speed": "Done",
+                            "eta": "",
+                            "format_type": "audio" if audio_only else "video",
+                        })
+                    continue
+                else:
+                    err_txt = (res.stderr or res.stdout or "yt-dlp download failed").strip()
+                    dm._broadcast_log("social", f"[{i+1}/{len(urls)}] Warning: Failed to download reel: {err_txt[:120]}")
+                    errors.append(f"{url}: {err_txt[:120]}")
+                    continue
 
             def _stream_copy(resp, dest):
                 tot_hdr = resp.getheader("Content-Length")
@@ -2609,6 +2695,7 @@ def _execute_inventory_sync(dm, watchlist: list[str]) -> dict[str, Any]:
     resolved_cookie = resolve_and_convert_cookie(cookie)
     gallery_dl_bin = str(BUNDLE_DIR / "gallery-dl.exe") if (BUNDLE_DIR / "gallery-dl.exe").exists() else "gallery-dl"
     creation_flags = 0x08000000 if os.name == "nt" else 0
+    custom_ext_dir = BUNDLE_DIR / "custom_extractors"
 
     total_new = 0
     total_skipped = 0
@@ -2617,9 +2704,13 @@ def _execute_inventory_sync(dm, watchlist: list[str]) -> dict[str, Any]:
         creator_clean = creator.strip().lstrip("@")
         if not creator_clean:
             continue
-        dm._broadcast_log("social", f"[Inventory] Scanning creator @{creator_clean}...")
-        url = f"https://www.instagram.com/{creator_clean}/"
-        cmd = [gallery_dl_bin, "--range", "1-50", "-j", f"https://www.instagram.com/{creator_clean}/posts"]
+        dm._broadcast_log("social", f"[Inventory] 🔍 Scanning creator @{creator_clean}...")
+        
+        # 1. Profile feed posts
+        cmd = [gallery_dl_bin, "--range", "1-100", "-j"]
+        if custom_ext_dir.exists():
+            cmd.extend(["-X", str(custom_ext_dir)])
+        cmd.append(f"https://www.instagram.com/{creator_clean}/posts")
         if resolved_cookie:
             cmd.extend(["--cookies", resolved_cookie])
 
@@ -2631,28 +2722,32 @@ def _execute_inventory_sync(dm, watchlist: list[str]) -> dict[str, Any]:
                 if p_items:
                     items.extend(p_items)
 
-            # Also check dedicated reels tab for unshared reels
+            # 2. Check dedicated Reels tab for any additional unshared reels
             try:
-                r_cmd = [gallery_dl_bin, "--range", "1-50", "-j", f"https://www.instagram.com/{creator_clean}/reels"]
+                r_cmd = [gallery_dl_bin, "--range", "1-100", "-j"]
+                if custom_ext_dir.exists():
+                    r_cmd.extend(["-X", str(custom_ext_dir)])
+                r_cmd.append(f"https://www.instagram.com/{creator_clean}/reels")
                 if resolved_cookie:
                     r_cmd.extend(["--cookies", resolved_cookie])
-                r_res = subprocess.run(r_cmd, capture_output=True, text=True, errors="replace", timeout=45, creationflags=creation_flags)
+                
+                r_res = subprocess.run(r_cmd, capture_output=True, text=True, errors="replace", timeout=60, creationflags=creation_flags)
                 if r_res.returncode == 0 and r_res.stdout:
                     _, r_items = _parse_gallery_dl_output(r_res.stdout)
                     if r_items:
-                        seen_ids = {it.get("id") or it.get("url") for it in items}
+                        seen_keys = {it.get("id") or it.get("shortcode") or it.get("url") for it in items}
                         for r_it in r_items:
-                            rid = r_it.get("id") or r_it.get("url")
-                            if rid not in seen_ids:
+                            rkey = r_it.get("id") or r_it.get("shortcode") or r_it.get("url")
+                            if rkey not in seen_keys:
                                 items.append(r_it)
-                                seen_ids.add(rid)
-            except Exception:
-                pass
+                                seen_keys.add(rkey)
+            except Exception as re_err:
+                logger.warning(f"Reels tab sync scan failed for @{creator_clean}: {re_err}")
 
             if items:
                 new_urls = []
                 for it in items:
-                    m_id = str(it.get("media_id") or it.get("url") or "")
+                    m_id = str(it.get("shortcode") or it.get("id") or it.get("media_id") or it.get("url") or "")
                     if not m_id:
                         continue
                     if is_media_archived(creator_clean, m_id):
@@ -2663,7 +2758,7 @@ def _execute_inventory_sync(dm, watchlist: list[str]) -> dict[str, Any]:
                         total_new += 1
 
                 if new_urls:
-                    dm._broadcast_log("social", f"[Inventory] Found {len(new_urls)} NEW posts for @{creator_clean}! Queuing downloads...")
+                    dm._broadcast_log("social", f"[Inventory] ⚡ Found {len(new_urls)} NEW items (posts/reels) for @{creator_clean}! Queuing downloads...")
                     settings = load_settings()
                     out_dir = settings.get("social_output_dir") or settings.get("output_dir") or str(DEFAULT_DOWNLOAD_DIR)
                     _execute_download_social(
@@ -2671,12 +2766,13 @@ def _execute_inventory_sync(dm, watchlist: list[str]) -> dict[str, Any]:
                         new_urls,
                         output_dir=out_dir,
                         creator=creator_clean,
-                        organize_subfolder=True
+                        organize_subfolder=True,
+                        platform="instagram"
                     )
                 else:
-                    dm._broadcast_log("social", f"[Inventory] @{creator_clean} is up to date (no new posts).")
+                    dm._broadcast_log("social", f"[Inventory] ✅ @{creator_clean} is up to date (no new posts or reels).")
         except Exception as e:
-            dm._broadcast_log("social", f"[Inventory] Error scanning @{creator_clean}: {e}")
+            dm._broadcast_log("social", f"[Inventory] ❌ Error scanning @{creator_clean}: {e}")
 
     dm._broadcast_log("social", f"⚡ Inventory Sync Complete: {total_new} new items downloaded, {total_skipped} skipped (already saved).")
     return {

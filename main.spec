@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-Horizon Video Downloader v5.2 — PyInstaller Spec
+Horizon Video Downloader v5.3 — PyInstaller Spec
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Build command:
     pyinstaller main.spec

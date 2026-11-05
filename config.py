@@ -17,7 +17,7 @@ from typing import Any
 
 # ── Application Metadata ──────────────────────────────────────────────
 APP_NAME = "Horizon Video Downloader"
-APP_VERSION = "5.2.0"
+APP_VERSION = "5.3.0"
 APP_ID = "hvd"
 
 # ── Runtime Path Resolution ───────────────────────────────────────────

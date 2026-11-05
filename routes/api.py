@@ -2966,7 +2966,15 @@ async def install_app_update_endpoint(request: Request) -> JSONResponse:
 
         dm._broadcast_log("system", f"✅ Update downloaded ({temp_installer.stat().st_size} bytes). Launching setup...")
         if os.name == "nt":
-            subprocess.Popen([str(temp_installer), "/SILENT", "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"])
+            # Launch setup completely detached via Windows Shell (cmd.exe /c start "")
+            # This ensures that when taskkill terminates HorizonDownloader.exe,
+            # the installer process is in an independent process group and continues smoothly.
+            cmd_str = f'start "" "{temp_installer}" /SILENT /SUPPRESSMSGBOXES'
+            subprocess.Popen(
+                ["cmd.exe", "/c", cmd_str],
+                creationflags=0x08000000 | 0x00000200,
+                close_fds=True,
+            )
         return JSONResponse({"success": True, "message": "Installer launched. Horizon will restart."})
     except Exception as e:
         logger.exception("Failed to install update")

@@ -30,16 +30,16 @@ procedure KillRunningProcesses();
 var
   ResultCode: Integer;
 begin
-  // Force terminate any lingering Horizon Downloader or download tools using cmd.exe
-  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM HorizonDownloader.exe /IM yt-dlp.exe /IM ffmpeg.exe /IM ffprobe.exe /IM gallery-dl.exe /IM deno.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Force terminate any lingering Horizon Downloader or download tools (without /T to avoid killing the updater itself)
+  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM HorizonDownloader.exe /IM yt-dlp.exe /IM ffmpeg.exe /IM ffprobe.exe /IM gallery-dl.exe /IM deno.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   
   // Also invoke taskkill directly from System directory
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM HorizonDownloader.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM yt-dlp.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ffmpeg.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ffprobe.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM gallery-dl.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM deno.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM HorizonDownloader.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM yt-dlp.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ffmpeg.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ffprobe.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM gallery-dl.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM deno.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   
   // Sleep 800ms so Windows kernel releases file locks
   Sleep(800);
@@ -68,5 +68,16 @@ begin
   if CurStep = ssPostInstall then
   begin
     Exec(ExpandConstant('{cmd}'), '/C findstr /i "hvd.com" "' + ExpandConstant('{sys}\drivers\etc\hosts') + '" >nul || (echo.>> "' + ExpandConstant('{sys}\drivers\etc\hosts') + '" & echo 127.0.0.1 hvd.com>> "' + ExpandConstant('{sys}\drivers\etc\hosts') + '" & echo 127.0.0.1 www.hvd.com>> "' + ExpandConstant('{sys}\drivers\etc\hosts') + '" & ipconfig /flushdns >nul)', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+end;
+
+procedure DeinitializeSetup();
+var
+  ResultCode: Integer;
+begin
+  // If installed silently via In-App Auto Updater, relaunch Horizon automatically
+  if WizardSilent then
+  begin
+    Exec(ExpandConstant('{app}\HorizonDownloader.exe'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
   end;
 end;

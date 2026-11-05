@@ -17,7 +17,7 @@ from typing import Any
 
 # ── Application Metadata ──────────────────────────────────────────────
 APP_NAME = "Horizon Video Downloader"
-APP_VERSION = "5.3.0"
+APP_VERSION = "5.4.0"
 APP_ID = "hvd"
 
 # ── Runtime Path Resolution ───────────────────────────────────────────
@@ -38,26 +38,65 @@ RUNTIME_DIR: Path = (
 )
 
 # ── Settings File (persisted on disk) ────────────────────────────────
+def get_user_data_dir() -> Path:
+    """Return a guaranteed-writable user directory for persistent settings, database, and cookies."""
+    appdata = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+    if appdata:
+        p = Path(appdata) / "HorizonDownloader"
+    else:
+        p = Path.home() / ".horizon_downloader"
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    except Exception:
+        return Path.cwd()
+
+
+def get_writable_dir() -> Path:
+    """
+    Returns RUNTIME_DIR if writable (e.g. dev mode or portable folder),
+    otherwise gracefully falls back to the user's AppData directory
+    (protecting against Windows UAC PermissionError when installed in Program Files).
+    """
+    try:
+        test_file = RUNTIME_DIR / ".write_test"
+        test_file.touch()
+        test_file.unlink(missing_ok=True)
+        return RUNTIME_DIR
+    except Exception:
+        return get_user_data_dir()
+
+
 SETTINGS_FILE: Path = RUNTIME_DIR / "settings.json"
 
 
 def load_settings() -> dict[str, Any]:
     """Load persisted user settings from JSON file if available."""
-    if SETTINGS_FILE.exists():
-        try:
-            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
+    # Check RUNTIME_DIR first, then user AppData fallback
+    for cand in [SETTINGS_FILE, get_user_data_dir() / "settings.json"]:
+        if cand.exists():
+            try:
+                with open(cand, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
     return {}
 
 
 def save_settings(data: dict[str, Any]) -> bool:
     """Save or update user settings to JSON file."""
+    target = SETTINGS_FILE
+    try:
+        test_f = target.parent / ".write_test"
+        test_f.touch()
+        test_f.unlink(missing_ok=True)
+    except Exception:
+        target = get_user_data_dir() / "settings.json"
+
     try:
         current = load_settings()
         current.update(data)
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        with open(target, "w", encoding="utf-8") as f:
             json.dump(current, f, indent=2)
         return True
     except Exception:
@@ -68,11 +107,14 @@ def resolve_and_convert_cookie(cookie_input: str | None = None) -> str | None:
     """
     Resolves cookie file path and automatically converts JSON cookies
     (e.g. from Chrome extensions) to Netscape format on the fly.
+    Guarantees the target cookie file is located in a writable directory so
+    yt-dlp can dump updated session cookies upon exit without PermissionError.
     """
     if not cookie_input:
         cookie_input = load_settings().get("cookie_file")
     if not cookie_input:
         for def_cand in [
+            get_user_data_dir() / "cookies.txt",
             RUNTIME_DIR / "cookies.txt",
             BUNDLE_DIR / "cookies.txt",
             BUNDLE_DIR / "_internal" / "cookies.txt",
@@ -88,6 +130,7 @@ def resolve_and_convert_cookie(cookie_input: str | None = None) -> str | None:
     cpath = Path(cookie_input)
     if not cpath.is_absolute():
         for candidate in [
+            get_user_data_dir() / cookie_input,
             RUNTIME_DIR / cookie_input,
             BUNDLE_DIR / cookie_input,
             BUNDLE_DIR / "_internal" / cookie_input,
@@ -102,6 +145,15 @@ def resolve_and_convert_cookie(cookie_input: str | None = None) -> str | None:
     if not cpath.exists():
         return None
 
+    writable_dir = get_writable_dir()
+    try:
+        test_p = cpath.parent / ".write_test"
+        test_p.touch()
+        test_p.unlink(missing_ok=True)
+        is_writable = True
+    except Exception:
+        is_writable = False
+
     # Check if file is JSON format
     try:
         with open(cpath, "r", encoding="utf-8", errors="ignore") as f:
@@ -111,7 +163,8 @@ def resolve_and_convert_cookie(cookie_input: str | None = None) -> str | None:
             data = json.loads(content)
             cookies_list = data if isinstance(data, list) else data.get("cookies", [])
             if isinstance(cookies_list, list) and len(cookies_list) > 0:
-                netscape_file = cpath.with_name(f"{cpath.stem}.netscape.txt")
+                target_dir = cpath.parent if is_writable else writable_dir
+                netscape_file = target_dir / f"{cpath.stem}.netscape.txt"
                 with open(netscape_file, "w", encoding="utf-8") as out:
                     out.write("# Netscape HTTP Cookie File\n")
                     out.write("# Converted by Horizon Video Downloader\n\n")
@@ -129,6 +182,19 @@ def resolve_and_convert_cookie(cookie_input: str | None = None) -> str | None:
                         if name and domain:
                             out.write(f"{domain}\t{flag}\t{path}\t{secure}\t{expiry}\t{name}\t{value}\n")
                 return str(netscape_file)
+    except Exception:
+        pass
+
+    # Protect master cookie file:
+    # yt-dlp flushes and dumps its live cookie jar back into --cookies FILE on exit.
+    # To prevent yt-dlp from modifying, degrading, or corrupting the user's master cookie file,
+    # copy the source cookie to a dedicated runtime session file.
+    try:
+        import shutil
+        session_cookie = writable_dir / "runtime_session_cookies.txt"
+        if session_cookie != cpath:
+            shutil.copy2(cpath, session_cookie)
+            return str(session_cookie)
     except Exception:
         pass
 

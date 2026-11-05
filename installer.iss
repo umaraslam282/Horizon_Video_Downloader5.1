@@ -1,10 +1,10 @@
 [Setup]
 AppName=Horizon Video Downloader
-AppVersion=5.3
+AppVersion=5.4.0
 DefaultDirName={autopf}\HorizonDownloader
 DefaultGroupName=Horizon Video Downloader
 OutputDir=.
-OutputBaseFilename=HorizonDownloader_Setup_v5.3
+OutputBaseFilename=HorizonDownloader_Setup_v5.4.0
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -13,7 +13,10 @@ RestartApplications=no
 SetupIconFile=icon.ico
 
 [Files]
-Source: "dist_v53\HorizonDownloader\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\HorizonDownloader\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Dirs]
+Name: "{app}"; Permissions: users-modify
 
 [Icons]
 Name: "{autodesktop}\Horizon Video Downloader"; Filename: "{app}\HorizonDownloader.exe"; WorkingDir: "{app}"; Tasks: desktopicon

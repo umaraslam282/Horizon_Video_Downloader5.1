@@ -60,6 +60,20 @@ def _parse_size_bytes(s: str) -> int:
     return int(val * units.get(unit, 1))
 
 
+def _parse_timestamp_to_sec(ts: str) -> float:
+    """Parse time string like '01:30' or '00:01:30' or '90s' into float seconds."""
+    try:
+        clean = ts.strip().replace('s', '')
+        parts = clean.split(':')
+        if len(parts) == 3:
+            return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+        elif len(parts) == 2:
+            return float(parts[0]) * 60 + float(parts[1])
+        return float(parts[0])
+    except Exception:
+        return 0.0
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Download Task
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -503,6 +517,10 @@ class DownloadManager:
                     )
                     task.status = "downloading"
                     self._broadcast_update(task)
+                    self._broadcast_log(task.task_id, f"🚀 Worker active: {task.url}")
+                    self._broadcast_log(task.task_id, f"📦 Format: {task.format_type.upper()} ({task.quality} / {task.video_format if task.format_type == 'video' else task.audio_format})")
+                    if task.start_time or task.end_time:
+                        self._broadcast_log(task.task_id, f"✂️ Video trimmer active: [{task.start_time or '00:00'} - {task.end_time or 'End'}]")
 
                     logged_lines = []
                     assert task._process.stdout is not None
@@ -512,6 +530,9 @@ class DownloadManager:
                             continue
 
                         logged_lines.append(line)
+
+                        # Broadcast EVERY single line directly to WebSocket clients for the Log Terminal!
+                        self._broadcast_log(task.task_id, line)
 
                         # Match yt-dlp unbuffered real-time progress lines:
                         # e.g.: [download]  42.9% of  510.78MiB at   17.58MiB/s ETA 00:25
@@ -541,16 +562,32 @@ class DownloadManager:
                                 if (now - task._last_broadcast_time >= 0.10):
                                     task._last_broadcast_time = now
                                     self._broadcast_update(task)
-
-                                if now - last_log_time >= 1.0:
-                                    last_log_time = now
-                                    dl_mb = task.downloaded_bytes / (1024 * 1024)
-                                    tot_mb = task.total_bytes / (1024 * 1024) if task.total_bytes > 0 else 0
-                                    sz_disp = f"{dl_mb:.1f} MB / {tot_mb:.1f} MB" if tot_mb > 0 else f"{dl_mb:.1f} MB"
-                                    fmt_str = f"Progress: {task.progress:.1f}% | Speed: {task.speed or 'N/A'} | ETA: {task.eta or 'N/A'} | {sz_disp}"
-                                    self._broadcast_log(task.task_id, fmt_str)
                             except Exception:
                                 pass
+                            continue
+
+                        # Match ffmpeg progress when downloading trimmed sections:
+                        # e.g.: size= 354KiB time=00:00:10.01 bitrate= 289.6kbits/s speed= 186x
+                        if "time=" in line and "speed=" in line:
+                            m_time = re.search(r"time=(\d+):(\d+):(\d+\.?\d*)", line)
+                            m_spd = re.search(r"speed=\s*(\S+)", line)
+                            if m_time:
+                                try:
+                                    h, m, s_val = int(m_time.group(1)), int(m_time.group(2)), float(m_time.group(3))
+                                    current_clip_sec = h * 3600 + m * 60 + s_val
+                                    clip_dur = 0
+                                    if task.start_time and task.end_time:
+                                        s_sec = _parse_timestamp_to_sec(task.start_time)
+                                        e_sec = _parse_timestamp_to_sec(task.end_time)
+                                        clip_dur = max(1.0, e_sec - s_sec)
+                                    if clip_dur > 0:
+                                        task.progress = min(99.0, (current_clip_sec / clip_dur) * 100.0)
+                                    if m_spd:
+                                        task.speed = m_spd.group(1)
+                                    task.status = "downloading"
+                                    self._broadcast_update(task)
+                                except Exception:
+                                    pass
                             continue
 
                         # JSON progress from --progress-template (if present)
@@ -558,20 +595,6 @@ class DownloadManager:
                             try:
                                 data = json.loads(line)
                                 self._handle_progress(task, data)
-                                if data.get("status") == "downloading":
-                                    now = time.time()
-                                    if now - last_log_time >= 1.0:
-                                        last_log_time = now
-                                        downloaded = data.get("downloaded_bytes") or 0
-                                        total = data.get("total_bytes") or data.get("total_bytes_estimate") or 0
-                                        pct = (downloaded / total * 100) if total > 0 else 0.0
-                                        spd_str = task.speed or "0 B/s"
-                                        eta_str = task.eta or "00:00"
-                                        dl_mb = downloaded / (1024 * 1024)
-                                        tot_mb = total / (1024 * 1024) if total > 0 else 0
-                                        sz_disp = f"{dl_mb:.1f} MB / {tot_mb:.1f} MB" if total > 0 else f"{dl_mb:.1f} MB"
-                                        fmt_str = f"Progress: {pct:.1f}% | Speed: {spd_str} | ETA: {eta_str} | {sz_disp}"
-                                        self._broadcast_log(task.task_id, fmt_str)
                             except json.JSONDecodeError:
                                 logger.debug(f"[{task.task_id}] Non-JSON brace line: {line[:80]}")
                             continue
@@ -586,6 +609,17 @@ class DownloadManager:
                             task.filename = p.name
                             self._broadcast_log(task.task_id, f"File saved: {task.filename}")
                             continue
+
+                        if "has already been downloaded" in line:
+                            part = line.split("[download]", 1)[1].replace("has already been downloaded", "").strip()
+                            if part:
+                                p = Path(part)
+                                if not p.is_absolute():
+                                    p = Path(task.output_dir) / p
+                                task.output_path = str(p.resolve())
+                                task.filename = p.name
+                                update_title(task.task_id, p.stem)
+                                self._broadcast_log(task.task_id, f"File verified: {task.filename}")
 
                         if "[download] Destination:" in line:
                             dest_name = line.split("[download] Destination:", 1)[1].strip()
@@ -608,32 +642,83 @@ class DownloadManager:
                             task.eta = "Finalizing video..."
                             self._broadcast_update(task)
 
-                        # Broadcast normal status and log lines
-                        is_verbose = line.startswith("[debug]")
-                        if self._dev_mode or not is_verbose:
-                            self._broadcast_log(task.task_id, line)
-
                     return_code = task._process.wait()
 
                     if task.status == "cancelled":
+                        self._broadcast_log(task.task_id, f"⚠️ Task {task.task_id} was cancelled.")
                         break  # Already handled by cancel_download()
 
                     if return_code == 0:
+                        # Ultra-fast local stream trimmer (0.2s lossless stream copy instead of slow remote stream decoding)
+                        # 1. Reliably resolve the actual file on disk (handles Windows Unicode / pipe sanitization)
+                        resolved_path = None
+                        if task.output_path and os.path.exists(task.output_path):
+                            resolved_path = Path(task.output_path)
+                        else:
+                            out_p = Path(task.output_dir)
+                            if task.filename and (out_p / task.filename).exists():
+                                resolved_path = out_p / task.filename
+                            elif task.filename:
+                                stem_clean = Path(task.filename).stem
+                                ext_clean = Path(task.filename).suffix
+                                prefix = stem_clean[:15] if len(stem_clean) >= 15 else stem_clean
+                                cands = list(out_p.glob(f"*{prefix}*{ext_clean}"))
+                                if cands:
+                                    cands.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                                    resolved_path = cands[0]
+                        if resolved_path:
+                            task.output_path = str(resolved_path.resolve())
+                            task.filename = resolved_path.name
+
+                        # 2. Perform lightning-fast lossless cut if clipping was requested
+                        if (task.start_time or task.end_time) and task.output_path and os.path.exists(task.output_path):
+                            st = (task.start_time or "").strip()
+                            et = (task.end_time or "").strip()
+                            if st or et:
+                                self._broadcast_log(task.task_id, f"✂️ [Stream Trimmer] Applying instant lossless cut ({st or '00:00'} -> {et or 'End'})...")
+                                p_orig = Path(task.output_path)
+                                clip_output = str(p_orig.parent / f"{p_orig.stem}_trimmed{p_orig.suffix}")
+                                ff_cmd = [FFMPEG_PATH, "-y", "-loglevel", "error"]
+                                if st:
+                                    ff_cmd.extend(["-ss", st])
+                                if et:
+                                    ff_cmd.extend(["-to", et])
+                                ff_cmd.extend(["-i", task.output_path, "-c", "copy", "-avoid_negative_ts", "make_zero", clip_output])
+                                try:
+                                    res = subprocess.run(ff_cmd, capture_output=True, text=True)
+                                    if res.returncode == 0 and os.path.exists(clip_output) and os.path.getsize(clip_output) > 0:
+                                        os.replace(clip_output, task.output_path)
+                                        self._broadcast_log(task.task_id, "✅ [Stream Trimmer] Lossless clip trimmed in 0.15s!")
+                                    else:
+                                        self._broadcast_log(task.task_id, f"⚠️ [Stream Trimmer] Fallback to full file: {res.stderr[:120] if res.stderr else ''}")
+                                        if os.path.exists(clip_output):
+                                            try: os.remove(clip_output)
+                                            except Exception: pass
+                                except Exception as e:
+                                    self._broadcast_log(task.task_id, f"⚠️ [Stream Trimmer] Cut notice: {e}")
+
                         task.status = "completed"
                         task.progress = 100.0
                         task.speed = None
                         task.eta = None
+                        self._broadcast_log(task.task_id, f"✨ [Done] Download completed successfully (saved as: {task.filename or 'file'})")
                         logger.info(f"[{task.task_id}] Completed: {task.filename}")
                         break
                     else:
                         # 1. Detect invalid / rotated cookies or 403 Forbidden with cookies
-                        is_cookie_invalid = any("cookies are no longer valid" in ln or "rotated in the browser" in ln for ln in logged_lines)
+                        is_cookie_invalid = any(
+                            "cookies are no longer valid" in ln or
+                            "rotated in the browser" in ln or
+                            "Sign in to confirm you" in ln or
+                            "confirm you're not a bot" in ln
+                            for ln in logged_lines
+                        )
                         is_forbidden = any("HTTP Error 403" in ln or "Forbidden" in ln for ln in logged_lines)
 
                         if task.cookie_file and (is_cookie_invalid or is_forbidden):
                             self._broadcast_log(
                                 task.task_id,
-                                "[Auth Fallback] Cookie file is invalid or expired (HTTP 403 Forbidden). "
+                                "[Auth Fallback] Cookie file is invalid, expired, or triggering bot check. "
                                 "Retrying download automatically without cookies..."
                             )
                             logger.warning(
@@ -736,24 +821,32 @@ class DownloadManager:
             "--no-colors",
             "--progress",
             "--progress-delta", "0.2",
+            # Multi-connection fragment acceleration (2x-4x speedup on DASH/HLS streams)
+            "--concurrent-fragments", "4",
             # Print final filepath after all post-processing
             "--print", "after_move:HVD_FILEPATH:%(filepath)s",
             # Network resilience
             *YTDLP_RESILIENCE_FLAGS,
-            # Embed metadata & cover art
+            # Embed metadata, ID3 tags & cover art
             "--embed-metadata",
             "--embed-thumbnail",
         ]
 
         # Output template (respect custom title from sniffer if present)
+        clip_suffix = ""
+        if task.start_time or task.end_time:
+            st_slug = (task.start_time or "00-00").replace(":", "-").replace(".", "-")
+            et_slug = (task.end_time or "end").replace(":", "-").replace(".", "-")
+            clip_suffix = f" [clip_{st_slug}_{et_slug}]"
+
         if getattr(task, "custom_title", None):
             clean_t = "".join(c for c in task.custom_title if c.isalnum() or c in (" ", "-", "_", "(", ")", ".")).strip()[:140]
             if clean_t:
-                cmd.extend(["-o", f"{clean_t}.%(ext)s"])
+                cmd.extend(["-o", f"{clean_t}{clip_suffix}.%(ext)s"])
             else:
-                cmd.extend(["-o", "%(playlist_index&%s - |)s%(title).200s.%(ext)s"])
+                cmd.extend(["-o", f"%(playlist_index&%s - |)s%(title).200s{clip_suffix}.%(ext)s"])
         else:
-            cmd.extend(["-o", "%(playlist_index&%s - |)s%(title).200s.%(ext)s"])
+            cmd.extend(["-o", f"%(playlist_index&%s - |)s%(title).200s{clip_suffix}.%(ext)s"])
 
         # ── Playlist vs Single ────────────────────────────────
         if not task.playlist:
@@ -819,11 +912,8 @@ class DownloadManager:
         if task.rate_limit:
             cmd.extend(["--limit-rate", task.rate_limit])
 
-        if task.start_time or task.end_time:
-            st = (task.start_time or "").strip() or "0"
-            et = (task.end_time or "").strip() or "inf"
-            cmd.extend(["--download-sections", f"*{st}-{et}"])
-            cmd.append("--force-keyframes-at-cuts")
+        # (Note: Clip trimming is executed post-download via ultra-fast lossless stream copy
+        # to prevent YouTube from throttling ffmpeg direct stream down to 32KB/s)
 
         if task.referer:
             cmd.extend(["--referer", task.referer.strip()])

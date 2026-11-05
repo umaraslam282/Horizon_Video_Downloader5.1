@@ -53,11 +53,38 @@ def create_app() -> Starlette:
 
     # ── Lifespan (startup + shutdown) ─────────────────────────
 
+    async def _background_auto_sync_loop(app: Starlette):
+        import time
+        from config import load_settings, save_settings
+        from routes.api import _execute_inventory_sync
+        while True:
+            try:
+                await asyncio.sleep(60)  # Check cadence
+                s = load_settings()
+                interval = int(s.get("auto_sync_interval_hours", 0))
+                if interval <= 0:
+                    continue
+                last_sync = float(s.get("last_auto_sync_timestamp", 0))
+                now = time.time()
+                if (now - last_sync) >= (interval * 3600):
+                    watchlist = s.get("creator_watchlist", [])
+                    if watchlist:
+                        dm = app.state.download_manager
+                        dm._broadcast_log("social", f"⏰ [Auto-Sync] Running scheduled check (every {interval} hours) for {len(watchlist)} creators...")
+                        await asyncio.to_thread(_execute_inventory_sync, dm, watchlist)
+                        s = load_settings()
+                        s["last_auto_sync_timestamp"] = now
+                        save_settings(s)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning(f"Auto-sync background loop error: {e}")
+
     @asynccontextmanager
     async def lifespan(app: Starlette):
         """
         Startup:  Wire the DownloadManager to the async event loop and
-                  the WebSocket broadcast callback.
+                  the WebSocket broadcast callback, and start background auto-sync.
         Shutdown: Gracefully kill all active downloads.
         """
         # ── Startup ───────────────────────────────────────────
@@ -72,9 +99,16 @@ def create_app() -> Starlette:
         app.state.ws_manager = ws_manager
         app.state.sniffer_manager = sniffer_manager
 
+        sync_task = asyncio.create_task(_background_auto_sync_loop(app))
+
         logger.info(f"{APP_NAME} v{APP_VERSION} — server started")
         yield
         # ── Shutdown ──────────────────────────────────────────
+        sync_task.cancel()
+        try:
+            await sync_task
+        except asyncio.CancelledError:
+            pass
         download_manager.shutdown()
         sniffer_manager.shutdown()
         logger.info("Server shutdown complete")

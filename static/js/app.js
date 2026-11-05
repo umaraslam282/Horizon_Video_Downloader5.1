@@ -137,6 +137,7 @@ const App={
     this._bindSegmented('pl-seg',m=>{this.plMode=m;this._togglePlOpts();});
     this._bindPaste();
     this._bindSingleDL();
+    this._bindTimelineTrimmer();
     this._bindPlaylist();
     this._bindSocial();
     this._bindSniffer();
@@ -464,10 +465,13 @@ const App={
         document.getElementById('preview-title').textContent = data.title || 'Unknown Title';
         document.getElementById('preview-title').title = data.title || 'Unknown Title';
         document.getElementById('preview-uploader').textContent = data.uploader || 'Unknown Uploader';
-        document.getElementById('preview-duration').textContent = data.duration || '00:00';
+        const durSec = data.duration_seconds || (typeof data.duration === 'number' ? data.duration : this._parseTimeToSeconds(data.duration));
+        const durText = data.duration_string || data.duration || this._formatSecToTime(durSec);
+        document.getElementById('preview-duration').textContent = durText || '00:00';
         const durHint = document.getElementById('clip-dur-hint');
-        if (durHint) durHint.textContent = `Full length: ${data.duration || '--:--'}`;
+        if (durHint) durHint.textContent = `Full length: ${durText || '--:--'}`;
         if (tile) tile.style.display = 'flex';
+        this._initTimelineTrimmer(durSec, durText);
         
         // Populate Resolutions
         const resSel = document.getElementById('s-resolution');
@@ -551,64 +555,290 @@ const App={
     const clipRow = document.getElementById('clip-inputs-row');
     if (clipToggle && clipRow) {
       clipToggle.addEventListener('change', () => {
-        clipRow.style.display = clipToggle.checked ? 'grid' : 'none';
-        if (!clipToggle.checked) {
+        clipRow.style.display = clipToggle.checked ? 'block' : 'none';
+        if (clipToggle.checked) {
+          if (!this._trimmerState.duration || this._trimmerState.duration <= 0) {
+            this._initTimelineTrimmer(60, '01:00');
+          } else {
+            this._updateTrimmerUI(true);
+          }
+        } else {
           const st = document.getElementById('s-start-time');
           const et = document.getElementById('s-end-time');
           if (st) st.value = '';
           if (et) et.value = '';
+          this._trimmerState.start = 0;
+          this._trimmerState.end = this._trimmerState.duration;
         }
       });
     }
   },
 
-  async _doSingleDL(){
-    const url=document.getElementById('single-url').value.trim();
-    if(!url){this.toast('Paste a URL first','err');return;}
-    if(this._checkAutoRoute(url)) return;
-    const btn=document.getElementById('single-dl-btn');
-    const label=btn.querySelector('.action-label'),spin=btn.querySelector('.btn-spinner');
+  /* ── Visual Timeline Video Trimmer ───────────────────────── */
+  _trimmerState: {
+    duration: 0,
+    start: 0,
+    end: 0,
+    activeHandle: null,
+    isDragging: false,
+    trackRect: null,
+  },
 
-    const isClip = document.getElementById('s-clip-toggle')?.checked;
-    const startTime = isClip ? (document.getElementById('s-start-time')?.value.trim() || undefined) : undefined;
-    const endTime = isClip ? (document.getElementById('s-end-time')?.value.trim() || undefined) : undefined;
-    const referer = document.getElementById('s-referer')?.value.trim() || undefined;
+  _formatSecToTime(totalSec) {
+    totalSec = Math.max(0, Math.round(totalSec || 0));
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  },
 
-    if (isClip && !startTime && !endTime) {
-      this.toast('Please enter a Start Time or End Time for the clip', 'err');
-      return;
+  _parseTimeToSeconds(str) {
+    if (!str) return 0;
+    if (typeof str === 'number') return str;
+    const clean = String(str).trim().toLowerCase().replace('s', '');
+    if (!clean.includes(':')) {
+      const num = parseFloat(clean);
+      return isNaN(num) ? 0 : Math.max(0, num);
+    }
+    const parts = clean.split(':').map(p => parseFloat(p) || 0);
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return 0;
+  },
+
+  _parseTime(str) {
+    return this._parseTimeToSeconds(str);
+  },
+
+  _initTimelineTrimmer(durSec, durText) {
+    durSec = Math.max(1, Math.round(durSec || 60));
+    this._trimmerState.duration = durSec;
+    this._trimmerState.start = 0;
+    this._trimmerState.end = durSec;
+
+    const scaleStart = document.getElementById('trimmer-scale-start');
+    const scaleMid = document.getElementById('trimmer-scale-mid');
+    const scaleEnd = document.getElementById('trimmer-scale-end');
+    if (scaleStart) scaleStart.textContent = '00:00';
+    if (scaleMid) scaleMid.textContent = this._formatSecToTime(Math.round(durSec / 2));
+    if (scaleEnd) scaleEnd.textContent = this._formatSecToTime(durSec);
+
+    this._updateTrimmerUI(true);
+  },
+
+  _updateTrimmerUI(syncInputs = true) {
+    const s = this._trimmerState;
+    if (!s.duration) return;
+    const startPct = Math.min(100, Math.max(0, (s.start / s.duration) * 100));
+    const endPct = Math.min(100, Math.max(0, (s.end / s.duration) * 100));
+
+    const startH = document.getElementById('trimmer-start-handle');
+    const endH = document.getElementById('trimmer-end-handle');
+    const highlight = document.getElementById('trimmer-highlight');
+    const startBubble = document.getElementById('trimmer-start-bubble');
+    const endBubble = document.getElementById('trimmer-end-bubble');
+    const badge = document.getElementById('trimmer-range-badge');
+
+    if (startH) startH.style.left = `${startPct}%`;
+    if (endH) endH.style.left = `${endPct}%`;
+    if (highlight) {
+      highlight.style.left = `${startPct}%`;
+      highlight.style.width = `${Math.max(0, endPct - startPct)}%`;
     }
 
-    label.hidden=true;spin.hidden=false;btn.disabled=true;
+    const startStr = this._formatSecToTime(s.start);
+    const endStr = this._formatSecToTime(s.end);
+    const diffSec = Math.max(0, Math.round(s.end - s.start));
+    const diffStr = this._formatSecToTime(diffSec);
 
-    const settings=this._getSettings();
-    const rateLimit = document.getElementById('s-rate-limit').value || undefined;
+    if (startBubble) startBubble.textContent = startStr;
+    if (endBubble) endBubble.textContent = endStr;
+    if (badge) badge.textContent = `Selected: ${startStr} - ${endStr} (${diffStr})`;
 
-    const body={
-      url,
-      format_type:this.singleMode,
-      rate_limit:rateLimit,
-      start_time:startTime,
-      end_time:endTime,
-      referer:referer,
-      ...settings
+    if (syncInputs) {
+      const inStart = document.getElementById('s-start-time');
+      const inEnd = document.getElementById('s-end-time');
+      if (inStart) inStart.value = startStr;
+      if (inEnd) inEnd.value = endStr;
+    }
+  },
+
+  _bindTimelineTrimmer() {
+    const track = document.getElementById('trimmer-track');
+    const startH = document.getElementById('trimmer-start-handle');
+    const endH = document.getElementById('trimmer-end-handle');
+    const inStart = document.getElementById('s-start-time');
+    const inEnd = document.getElementById('s-end-time');
+
+    if (!track) return;
+
+    const onPointerMove = (e) => {
+      const st = this._trimmerState;
+      if (!st.isDragging || !st.activeHandle || !st.trackRect || !st.duration) return;
+      const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      const ratio = Math.max(0, Math.min(1, (clientX - st.trackRect.left) / st.trackRect.width));
+      const sec = Math.round(ratio * st.duration);
+
+      if (st.activeHandle === 'start') {
+        st.start = Math.max(0, Math.min(sec, st.end - 1));
+      } else if (st.activeHandle === 'end') {
+        st.end = Math.min(st.duration, Math.max(sec, st.start + 1));
+      }
+      this._updateTrimmerUI(true);
     };
 
-    if(this.singleMode==='video'){
-      body.quality=document.getElementById('s-resolution').value;
-      body.video_format=document.getElementById('s-vformat').value;
-      body.subtitles=document.getElementById('s-subs').value;
-      const subLangEl = document.getElementById('s-sublang');
-      const subLangVal = (subLangEl ? subLangEl.value : 'en') || 'en';
-      body.subtitle_lang = subLangVal.startsWith('live_chat') ? 'en' : subLangVal;
-    }else{
-      body.audio_format=document.getElementById('s-aformat').value;
-    }
+    const onPointerUp = () => {
+      this._trimmerState.isDragging = false;
+      this._trimmerState.activeHandle = null;
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
 
-    try{
+    const startDrag = (handleName, e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const st = this._trimmerState;
+      st.isDragging = true;
+      st.activeHandle = handleName;
+      st.trackRect = track.getBoundingClientRect();
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+    };
+
+    startH?.addEventListener('pointerdown', (e) => startDrag('start', e));
+    endH?.addEventListener('pointerdown', (e) => startDrag('end', e));
+
+    track.addEventListener('pointerdown', (e) => {
+      if (e.target === startH || e.target === endH || e.target.closest('.trimmer-handle')) return;
+      const st = this._trimmerState;
+      if (!st.duration) return;
+      const rect = track.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const clickSec = Math.round(ratio * st.duration);
+
+      const distToStart = Math.abs(clickSec - st.start);
+      const distToEnd = Math.abs(clickSec - st.end);
+      if (distToStart < distToEnd) {
+        st.start = Math.max(0, Math.min(clickSec, st.end - 1));
+        startDrag('start', e);
+      } else {
+        st.end = Math.min(st.duration, Math.max(clickSec, st.start + 1));
+        startDrag('end', e);
+      }
+      this._updateTrimmerUI(true);
+    });
+
+    document.querySelectorAll('.trimmer-preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = btn.dataset.preset;
+        const st = this._trimmerState;
+        if (!st.duration) return;
+        if (p === '30') {
+          st.start = 0;
+          st.end = Math.min(30, st.duration);
+        } else if (p === '60') {
+          st.start = 0;
+          st.end = Math.min(60, st.duration);
+        } else if (p === 'reset') {
+          st.start = 0;
+          st.end = st.duration;
+        }
+        this._updateTrimmerUI(true);
+      });
+    });
+
+    const syncFromInputs = () => {
+      const st = this._trimmerState;
+      const parsedStart = this._parseTimeToSeconds(inStart?.value);
+      const parsedEnd = this._parseTimeToSeconds(inEnd?.value);
+      if (st.duration > 0) {
+        st.start = Math.max(0, Math.min(parsedStart, st.duration));
+        st.end = Math.max(st.start + 1, Math.min(parsedEnd || st.duration, st.duration));
+      } else {
+        st.start = parsedStart;
+        st.end = parsedEnd;
+      }
+      this._updateTrimmerUI(false);
+    };
+
+    inStart?.addEventListener('change', syncFromInputs);
+    inEnd?.addEventListener('change', syncFromInputs);
+    inStart?.addEventListener('blur', syncFromInputs);
+    inEnd?.addEventListener('blur', syncFromInputs);
+  },
+
+  async _doSingleDL(){
+    const btn=document.getElementById('single-dl-btn');
+    if(!btn) return;
+    const label=btn.querySelector('.action-label'),spin=btn.querySelector('.btn-spinner');
+
+    try {
+      const url=document.getElementById('single-url').value.trim();
+      if(!url){this.toast('Paste a URL first','err');return;}
+      if(this._checkAutoRoute(url)) return;
+
+      const isClip = document.getElementById('s-clip-toggle')?.checked;
+      let startTime = undefined;
+      let endTime = undefined;
+      if (isClip) {
+        const rawStart = (document.getElementById('s-start-time')?.value || '').trim();
+        const rawEnd = (document.getElementById('s-end-time')?.value || '').trim();
+        const dur = this._trimmerState.duration || 0;
+        const parsedStart = this._parseTimeToSeconds(rawStart);
+        const parsedEnd = this._parseTimeToSeconds(rawEnd);
+
+        // Only trim if the user actually chose a subset of the video
+        const isStartZero = parsedStart === 0;
+        const isEndFull = (dur > 0 && parsedEnd >= dur);
+        if (!(isStartZero && isEndFull) && (rawStart || rawEnd)) {
+          startTime = rawStart || undefined;
+          endTime = rawEnd || undefined;
+        }
+      }
+      const referer = document.getElementById('s-referer')?.value.trim() || undefined;
+
+      label.hidden=true;spin.hidden=false;btn.disabled=true;
+
+      const settings=this._getSettings();
+      const rateLimit = document.getElementById('s-rate-limit').value || undefined;
+
+      const body={
+        url,
+        format_type:this.singleMode,
+        rate_limit:rateLimit,
+        start_time:startTime,
+        end_time:endTime,
+        referer:referer,
+        ...settings
+      };
+
+      if(this.singleMode==='video'){
+        body.quality=document.getElementById('s-resolution').value;
+        body.video_format=document.getElementById('s-vformat').value;
+        body.subtitles=document.getElementById('s-subs').value;
+        const subLangEl = document.getElementById('s-sublang');
+        const subLangVal = (subLangEl ? subLangEl.value : 'en') || 'en';
+        body.subtitle_lang = subLangVal.startsWith('live_chat') ? 'en' : subLangVal;
+      }else{
+        body.audio_format=document.getElementById('s-aformat').value;
+      }
+
+      this.log(`🚀 [${this.singleMode.toUpperCase()}] Requesting download: ${url}`);
+      if (isClip && (startTime || endTime)) {
+        this.log(`✂️ Clip range: ${startTime || '00:00'} -> ${endTime || 'End'}`);
+      }
+      this.log(`⚙️ Format: ${this.singleMode === 'video' ? body.video_format : body.audio_format} | Quality: ${body.quality || 'best'}`);
+      this.log(`📡 Spawning background download worker...`);
+
       const r=await fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const d=await r.json();
       if(r.ok){
+        this.log(`⚡ Task [${d.task_id}] active — streaming logs below:`);
         document.getElementById('single-url').value='';
         document.getElementById('s-start-time').value='';
         document.getElementById('s-end-time').value='';
@@ -620,11 +850,19 @@ const App={
         }
         const tile=document.getElementById('single-media-tile');
         if(tile)tile.style.display='none';
-        this.toast(isClip ? 'Clip download started' : 'Download started','ok');
+        this.toast((isClip && (startTime || endTime)) ? 'Clip download started' : 'Download started','ok');
       }
-      else this.toast(d.error||'Failed','err');
-    }catch{this.toast('Network error','err');}
-    finally{label.hidden=false;spin.hidden=true;btn.disabled=false;}
+      else {
+        this.log(`❌ Download error: ${d.error || 'Failed'}`);
+        this.toast(d.error||'Failed','err');
+      }
+    }catch(err){
+      this.log(`❌ Network / Connection error: ${err.message || err}`);
+      this.toast('Network error: ' + (err.message || err),'err');
+    }
+    finally{
+      label.hidden=false;spin.hidden=true;btn.disabled=false;
+    }
   },
 
   /* ═══════════════ PLAYLIST TAB ═══════════════ */
@@ -1069,11 +1307,19 @@ const App={
 
   /* ── Log ──────────────────────────────────────────────── */
   _bindLog(){document.getElementById('log-clear')?.addEventListener('click',()=>{document.getElementById('log-output').innerHTML='<span class="log-muted">Log cleared.</span>';});},
+  _truncateLogLines(out, maxLines = 500) {
+    if (!out || !out.textContent) return;
+    const lines = out.textContent.split('\n');
+    if (lines.length > maxLines) {
+      out.textContent = lines.slice(lines.length - maxLines).join('\n');
+    }
+  },
   log(msg){
     const out=document.getElementById('log-output');if(!out)return;
     if(out.querySelector('.log-muted'))out.innerHTML='';
     const ts=new Date().toLocaleTimeString('en-GB',{hour12:false});
     out.textContent+=`[${ts}] ${msg}\n`;
+    this._truncateLogLines(out, 500);
     if(out.scrollHeight-out.scrollTop-out.clientHeight<80)out.scrollTop=out.scrollHeight;
   },
   _appendLog(data){
@@ -1082,6 +1328,7 @@ const App={
     const ts=new Date().toLocaleTimeString('en-GB',{hour12:false});
     const prefix = data.task_id === 'SNIFFER' ? '[SNIFFER]' : `[${data.task_id}]`;
     out.textContent+=`[${ts}] ${prefix} ${data.message}\n`;
+    this._truncateLogLines(out, 500);
     out.scrollTop=out.scrollHeight;
 
     const tid = (data.task_id || '').toLowerCase();
@@ -1092,6 +1339,13 @@ const App={
     if (tid === 'inventory' && data.message) {
       const syncStatusText = document.getElementById('sync-status-text');
       if (syncStatusText) syncStatusText.textContent = data.message;
+      const progBox = document.getElementById('sync-inventory-progress');
+      if (progBox) {
+        setTimeout(() => { progBox.style.display = 'none'; }, 4000);
+      }
+      this.toast(data.message, 'ok');
+      this._loadCreatorWatchlist();
+      this._loadHistory();
     }
   },
 
@@ -1547,6 +1801,16 @@ const App={
         if (startupEl && s.windows_startup != null) startupEl.checked = !!s.windows_startup;
         const portEl = document.getElementById('set-preferred-port');
         if (portEl && s.preferred_port) portEl.value = s.preferred_port;
+        if (s.auto_sync_interval_hours != null) {
+          const currentHours = String(s.auto_sync_interval_hours);
+          document.querySelectorAll('#auto-sync-schedule-pills .schedule-pill').forEach(p => {
+            if (p.dataset.hours === currentHours) {
+              p.classList.add('active');
+            } else {
+              p.classList.remove('active');
+            }
+          });
+        }
         if (s.cookie_stats) this._renderCookieBadges(s.cookie_stats);
       };
 
@@ -2584,20 +2848,39 @@ const App={
         const r = await fetch('/api/inventory/sync', {method: 'POST'});
         const res = await r.json();
         if (r.ok && res.success) {
-          if (progText) progText.textContent = `Sync completed! Downloaded ${res.downloaded_count || 0} new media items.`;
-          this.toast(`✨ Inventory synced! Downloaded ${res.downloaded_count || 0} new items (${res.skipped_count || 0} already archived)`, 'ok');
-          setTimeout(() => {
-            if (progBox) progBox.style.display = 'none';
-          }, 4000);
-          this._loadHistory();
+          if (progText) progText.textContent = res.message || 'Scanning creators inventory & checking for new posts...';
+          this.toast(res.message || '⚡ Inventory sync started in background...', 'info');
         } else {
           if (progText) progText.textContent = res.error || 'Inventory sync encountered an issue';
           this.toast(res.error || 'Inventory sync failed', 'err');
+          if (progBox) setTimeout(() => { progBox.style.display = 'none'; }, 4000);
         }
       } catch (e) {
         if (progText) progText.textContent = 'Network error during inventory sync';
         this.toast('Network error during sync', 'err');
+        if (progBox) setTimeout(() => { progBox.style.display = 'none'; }, 4000);
       }
+    });
+
+    // Scheduled Auto-Sync pills
+    const pills = document.querySelectorAll('#auto-sync-schedule-pills .schedule-pill');
+    pills.forEach(pill => {
+      pill.addEventListener('click', async () => {
+        pills.forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        const hours = parseInt(pill.dataset.hours, 10) || 0;
+        try {
+          await fetch('/api/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({auto_sync_interval_hours: hours})
+          });
+          const label = hours === 0 ? 'Disabled (Manual Only)' : `Every ${hours} Hours`;
+          this.toast(`Auto-Sync schedule set to: ${label}`, 'ok');
+        } catch (e) {
+          this.toast('Failed to save Auto-Sync schedule', 'err');
+        }
+      });
     });
 
     this._loadCreatorWatchlist();

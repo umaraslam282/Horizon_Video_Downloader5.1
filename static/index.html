@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#0a0a0a">
-    <title>Horizon Video Downloader v5.3</title>
+    <title>Horizon Video Downloader v5.4</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,7 +19,7 @@
         <div class="brand">
             <svg class="brand-icon" viewBox="0 0 28 28" fill="none"><path d="M14 2L26 8v12l-12 6L2 20V8l12-6z" stroke="url(#bg)" stroke-width="1.5"/><path d="M10 13l3 3 5-6" stroke="url(#bg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="bg" x1="0" y1="0" x2="28" y2="28"><stop stop-color="#8b5cf6"/><stop offset="1" stop-color="#06b6d4"/></linearGradient></defs></svg>
             <span class="brand-text">HORIZON</span>
-            <span class="brand-ver">v5.3</span>
+            <span class="brand-ver">v5.4</span>
         </div>
         <nav class="tab-bar" id="tab-bar">
             <button class="tab-btn active" data-tab="single" type="button">
@@ -123,14 +123,51 @@
                                 </label>
                                 <span id="clip-dur-hint" style="font-size:0.75rem; color:var(--text-3);">Full length: --:--</span>
                             </div>
-                            <div id="clip-inputs-row" class="options-grid" style="display:none; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
-                                <div class="opt-group">
-                                    <label style="font-size:0.75rem;">Start Time (hh:mm:ss or mm:ss or seconds)</label>
-                                    <input type="text" class="opt-input" id="s-start-time" placeholder="e.g. 01:15 or 75s" autocomplete="off" spellcheck="false" style="padding:8px 10px; font-size:0.85rem;">
+                            <div id="clip-inputs-row" style="display:none; margin-top:14px;">
+                                <!-- Visual Dual-Handle Scrubber Timeline -->
+                                <div class="timeline-trimmer-wrap">
+                                    <div class="trimmer-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                                        <span class="trimmer-badge" id="trimmer-range-badge" style="font-size:0.8rem; font-weight:600; color:var(--accent); background:rgba(139,92,246,0.12); padding:3px 8px; border-radius:6px; border:1px solid rgba(139,92,246,0.25);">Selected: 00:00 - 00:00</span>
+                                        <div class="trimmer-quick-presets" style="display:flex; gap:6px;">
+                                            <button type="button" class="btn-xs trimmer-preset-btn" data-preset="30">First 30s</button>
+                                            <button type="button" class="btn-xs trimmer-preset-btn" data-preset="60">First 1m</button>
+                                            <button type="button" class="btn-xs trimmer-preset-btn" data-preset="reset">Full Video</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="trimmer-track-container" id="trimmer-track-container">
+                                        <div class="trimmer-track" id="trimmer-track">
+                                            <!-- Highlighted active range -->
+                                            <div class="trimmer-highlight" id="trimmer-highlight"></div>
+                                            <!-- Start Handle -->
+                                            <div class="trimmer-handle trimmer-start-handle" id="trimmer-start-handle" tabindex="0">
+                                                <div class="trimmer-handle-line"></div>
+                                                <div class="trimmer-handle-bubble" id="trimmer-start-bubble">00:00</div>
+                                            </div>
+                                            <!-- End Handle -->
+                                            <div class="trimmer-handle trimmer-end-handle" id="trimmer-end-handle" tabindex="0">
+                                                <div class="trimmer-handle-line"></div>
+                                                <div class="trimmer-handle-bubble" id="trimmer-end-bubble">00:00</div>
+                                            </div>
+                                        </div>
+                                        <div class="trimmer-scale-labels" style="display:flex; justify-content:space-between; font-size:0.72rem; color:var(--text-3); margin-top:6px; user-select:none;">
+                                            <span id="trimmer-scale-start">00:00</span>
+                                            <span id="trimmer-scale-mid">--:--</span>
+                                            <span id="trimmer-scale-end">--:--</span>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="opt-group">
-                                    <label style="font-size:0.75rem;">End Time (hh:mm:ss or mm:ss or seconds)</label>
-                                    <input type="text" class="opt-input" id="s-end-time" placeholder="e.g. 03:45" autocomplete="off" spellcheck="false" style="padding:8px 10px; font-size:0.85rem;">
+
+                                <!-- Manual Inputs (bidirectionally synced with visual trimmer) -->
+                                <div class="options-grid" style="grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+                                    <div class="opt-group">
+                                        <label style="font-size:0.75rem;">Start Time (hh:mm:ss or seconds)</label>
+                                        <input type="text" class="opt-input" id="s-start-time" placeholder="00:00:00" autocomplete="off" spellcheck="false" style="padding:8px 10px; font-size:0.85rem;">
+                                    </div>
+                                    <div class="opt-group">
+                                        <label style="font-size:0.75rem;">End Time (hh:mm:ss or seconds)</label>
+                                        <input type="text" class="opt-input" id="s-end-time" placeholder="00:00:00" autocomplete="off" spellcheck="false" style="padding:8px 10px; font-size:0.85rem;">
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -646,6 +683,21 @@
                     <div style="display:flex; align-items:center; gap:10px; color:var(--text-1); font-size:0.88rem;">
                         <div class="spinner-ring sm" style="width:16px; height:16px;"></div>
                         <span id="sync-status-text">Scanning creators inventory…</span>
+                    </div>
+                </div>
+
+                <div class="setting-row" style="margin-top: 14px;">
+                    <div>
+                        <label style="font-weight:600; display:block;">Scheduled Background Auto-Sync</label>
+                        <span class="setting-desc" style="display:block; font-size:0.8rem; color:var(--text-3); margin-top:2px;">Check watchlist creators and auto-download new posts & reels in background.</span>
+                    </div>
+                    <div class="setting-ctrl">
+                        <div class="sync-schedule-pills" id="auto-sync-schedule-pills">
+                            <button type="button" class="schedule-pill active" data-hours="0">Disabled</button>
+                            <button type="button" class="schedule-pill" data-hours="4">Every 4 Hours</button>
+                            <button type="button" class="schedule-pill" data-hours="12">Every 12 Hours</button>
+                            <button type="button" class="schedule-pill" data-hours="24">Every 24 Hours</button>
+                        </div>
                     </div>
                 </div>
 

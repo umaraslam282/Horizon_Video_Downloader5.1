@@ -12,9 +12,11 @@ logger = logging.getLogger("hvd.db")
 DB_PATH = RUNTIME_DIR / "history.db"
 
 def get_connection():
-    """Return a SQLite connection with timeout and WAL mode enabled."""
-    conn = sqlite3.connect(str(DB_PATH), timeout=15.0)
+    """Return a SQLite connection with timeout and WAL mode enabled for high-concurrency writes."""
+    conn = sqlite3.connect(str(DB_PATH), timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout=30000;")
     return conn
 
 def init_db():

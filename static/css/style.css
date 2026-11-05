@@ -821,3 +821,136 @@ input,button,select,textarea{font-family:inherit}
     filter: brightness(1.15);
     transform: translateY(-1px);
 }
+
+/* ─── Timeline Trimmer & Schedule Pills ────────────────────────── */
+.btn-xs {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    font-size: 0.72rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.btn-xs:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: var(--text-1);
+    border-color: var(--accent);
+}
+
+.timeline-trimmer-wrap {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px 10px;
+    margin-bottom: 6px;
+}
+.trimmer-track-container {
+    position: relative;
+    padding-top: 26px;
+    padding-bottom: 6px;
+}
+.trimmer-track {
+    position: relative;
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+}
+.trimmer-highlight {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0%;
+    width: 100%;
+    background: linear-gradient(90deg, #8b5cf6, #06b6d4);
+    border-radius: 4px;
+    box-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+    pointer-events: none;
+}
+.trimmer-handle {
+    position: absolute;
+    top: 50%;
+    width: 16px;
+    height: 24px;
+    transform: translate(-50%, -50%);
+    background: #ffffff;
+    border: 2px solid var(--accent);
+    border-radius: 4px;
+    cursor: ew-resize;
+    z-index: 10;
+    touch-action: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.trimmer-handle:hover, .trimmer-handle:active {
+    transform: translate(-50%, -50%) scale(1.15);
+    box-shadow: 0 0 12px var(--accent);
+}
+.trimmer-handle-line {
+    width: 2px;
+    height: 10px;
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 1px;
+}
+.trimmer-handle-bubble {
+    position: absolute;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1e1b2e;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-family: monospace;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--accent);
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.trimmer-handle-bubble::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -4px;
+    border-width: 4px;
+    border-style: solid;
+    border-color: var(--accent) transparent transparent transparent;
+}
+
+.sync-schedule-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.schedule-pill {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.schedule-pill:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-1);
+    border-color: var(--text-3);
+}
+.schedule-pill.active {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(6, 182, 212, 0.25));
+    border-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
+}

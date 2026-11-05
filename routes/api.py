@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -414,15 +415,44 @@ def _fetch_video_info(url: str, cookie_file: str | None = None) -> dict:
         creationflags=SUBPROCESS_FLAGS,
     )
 
+    # Automatic fallback if stale/invalid cookie triggered a bot or auth error
+    if result.returncode != 0 and resolved_cookie:
+        err_lower = (result.stderr or "").lower()
+        if any(kw in err_lower for kw in ["bot", "cookie", "login_required", "sign in", "403", "forbidden"]):
+            fallback_cmd = [
+                YTDLP_PATH,
+                "--dump-single-json",
+                "--no-download",
+                "--no-playlist",
+                "--no-warnings",
+                url,
+            ]
+            fallback_result = subprocess.run(
+                fallback_cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                creationflags=SUBPROCESS_FLAGS,
+            )
+            if fallback_result.returncode == 0:
+                result = fallback_result
+
     if result.returncode != 0:
         stderr = result.stderr.strip() if result.stderr else "Unknown error"
+        err_lower = stderr.lower()
+        if any(kw in err_lower for kw in ["sign in to confirm you", "confirm you're not a bot", "login_required"]):
+            stderr = "YouTube bot verification required. Configured cookies may be expired or missing LOGIN_INFO. Please export a fresh cookies.txt from youtube.com while logged in."
         raise RuntimeError(f"yt-dlp info extraction failed: {stderr}")
 
     raw = json.loads(result.stdout)
 
+    dur = raw.get("duration")
     return {
         "title": raw.get("title"),
-        "duration": raw.get("duration"),
+        "duration": dur,
+        "duration_seconds": int(dur or 0),
         "duration_string": raw.get("duration_string"),
         "thumbnail": raw.get("thumbnail"),
         "uploader": raw.get("uploader"),
@@ -462,8 +492,34 @@ def _fetch_playlist_info(url: str, cookie_file: str | None = None) -> dict:
         creationflags=SUBPROCESS_FLAGS,
     )
 
+    # Automatic fallback if stale/invalid cookie triggered a bot or auth error
+    if result.returncode != 0 and cpath:
+        err_lower = (result.stderr or "").lower()
+        if any(kw in err_lower for kw in ["bot", "cookie", "login_required", "sign in", "403", "forbidden"]):
+            fallback_cmd = [
+                YTDLP_PATH,
+                "--flat-playlist",
+                "--dump-single-json",
+                "--no-warnings",
+                url,
+            ]
+            fallback_result = subprocess.run(
+                fallback_cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+                creationflags=SUBPROCESS_FLAGS,
+            )
+            if fallback_result.returncode == 0:
+                result = fallback_result
+
     if result.returncode != 0:
         stderr = result.stderr.strip() if result.stderr else "Unknown error"
+        err_lower = stderr.lower()
+        if any(kw in err_lower for kw in ["sign in to confirm you", "confirm you're not a bot", "login_required"]):
+            stderr = "YouTube bot verification required. Configured cookies may be expired or missing LOGIN_INFO. Please export a fresh cookies.txt from youtube.com while logged in."
         raise RuntimeError(f"Playlist fetch failed: {stderr}")
 
     raw = json.loads(result.stdout)
@@ -631,6 +687,7 @@ async def open_folder(request: Request) -> JSONResponse:
 
     filepath = None
     fallback_dir = None
+    rec = None
     if task:
         filepath = task.output_path
         fallback_dir = task.output_dir
@@ -645,7 +702,7 @@ async def open_folder(request: Request) -> JSONResponse:
         fallback_dir = str(DEFAULT_DOWNLOAD_DIR)
 
     if not filepath or not Path(filepath).exists():
-        fname = rec.get("filename") if rec else None
+        fname = (task.filename if task else None) or (rec.get("filename") if rec else None)
         if fname:
             settings = load_settings()
             search_dirs = [
@@ -676,19 +733,37 @@ async def open_folder(request: Request) -> JSONResponse:
     if not filepath or not Path(filepath).exists():
         if fallback_dir and Path(fallback_dir).exists():
             try:
-                subprocess.Popen(f'explorer "{fallback_dir}"', creationflags=SUBPROCESS_FLAGS)
+                if os.name == "nt":
+                    os.startfile(fallback_dir)
+                else:
+                    subprocess.Popen(["xdg-open", fallback_dir])
                 return JSONResponse({"success": True, "message": "Opened download folder"})
             except Exception as e:
                 return _error(str(e), status=500)
         return _error("File or folder does not exist on disk.", status=404)
 
     try:
-        cmd = f'explorer /select,"{Path(filepath).resolve()}"'
-        subprocess.Popen(cmd, creationflags=SUBPROCESS_FLAGS)
+        p_file = Path(filepath).resolve()
+        if os.name == "nt":
+            if p_file.is_file():
+                subprocess.Popen(f'explorer.exe /select,"{p_file}"')
+            else:
+                os.startfile(str(p_file))
+        else:
+            parent = p_file.parent if p_file.is_file() else p_file
+            subprocess.Popen(["xdg-open", str(parent)])
         return JSONResponse({"success": True, "message": "Opened folder with file selected"})
     except Exception as e:
-        logger.exception("Failed to open folder")
-        return _error(str(e), status=500)
+        try:
+            parent = str(Path(filepath).resolve().parent)
+            if os.name == "nt":
+                os.startfile(parent)
+            else:
+                subprocess.Popen(["xdg-open", parent])
+            return JSONResponse({"success": True, "message": "Opened folder"})
+        except Exception:
+            logger.exception("Failed to open folder")
+            return _error(str(e), status=500)
 
 
 def _parse_gallery_dl_output(stdout_str: str) -> tuple[dict, list[dict]]:
@@ -846,6 +921,7 @@ def _parse_gallery_dl_output(stdout_str: str) -> tuple[dict, list[dict]]:
         seen_keys.add(item_key)
         seen_urls.add(target_url)
 
+        desc = metadata.get("description") or metadata.get("caption") or metadata.get("content") or post_info.get("caption") or ""
         items.append({
             "url": target_url,
             "type": "video" if is_video else "image",
@@ -853,6 +929,7 @@ def _parse_gallery_dl_output(stdout_str: str) -> tuple[dict, list[dict]]:
             "id": item_key,
             "shortcode": metadata.get("post_shortcode") or metadata.get("shortcode") or metadata.get("code") or "",
             "slide_index": len(items) + 1,
+            "caption": str(desc),
         })
 
     # Filter out duplicate image entries that are just the video's poster thumbnail
@@ -969,6 +1046,132 @@ def _fetch_social_ytdlp_fallback(url: str, cookie_file: str | None = None) -> tu
     return post_info, items
 
 
+def _scan_instagram_profile_catalog(dm, ig_username: str, cookie_file: str | None = None) -> tuple[dict, list[dict]]:
+    """
+    Exhaustively scans an Instagram creator's entire catalog:
+    Step 1: Grid Feed (/posts) - finds all photos, carousels, and grid videos.
+    Step 2: Dedicated Reels (/reels) - finds any additional unshared reels.
+    Provides live real-time line-by-line counting logs.
+    Returns (post_info, all_items).
+    """
+    global active_social_process
+    resolved_cookie = resolve_and_convert_cookie(cookie_file)
+    gallery_dl_bin = str(BUNDLE_DIR / "gallery-dl.exe") if (BUNDLE_DIR / "gallery-dl.exe").exists() else "gallery-dl"
+    creation_flags = 0x08000000 if os.name == "nt" else 0
+    custom_ext_dir = BUNDLE_DIR / "custom_extractors"
+
+    post_info = {
+        "platform": "instagram",
+        "username": ig_username,
+        "fullname": "",
+        "caption": "",
+        "avatar_url": "",
+    }
+    final_items = []
+
+    def _execute_dl(target_u: str) -> str:
+        global active_social_process
+        cmd = [
+            gallery_dl_bin,
+            "-j",
+            "--sleep-request", "1",
+        ]
+        if custom_ext_dir.exists():
+            cmd.extend(["-X", str(custom_ext_dir)])
+        cmd.append(target_u)
+        if resolved_cookie:
+            cmd.extend(["--cookies", resolved_cookie])
+
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=creation_flags
+        )
+        active_social_process = p
+        stdout_lines = []
+        found_count = 0
+        is_reels_call = "/reels" in target_u
+        unit_label = "reels" if is_reels_call else "media items"
+        try:
+            for line in p.stdout:
+                line_str = line.strip()
+                if not line_str:
+                    continue
+                stdout_lines.append(line_str)
+                if '"post_id":' in line_str or '"post_shortcode":' in line_str or '"shortcode":' in line_str:
+                    found_count += 1
+                    if found_count == 1 or found_count % 25 == 0:
+                        dm._broadcast_log("social", f"📸 Scanned {found_count} {unit_label} from @{ig_username}...")
+                elif not line_str.startswith(('"', '{', '}', ']')) and any(kw in line_str.lower() for kw in ("warning", "error", "429", "rate limit")):
+                    if "abortextraction" not in line_str.lower() and "login page" not in line_str.lower():
+                        dm._broadcast_log("social", f"[Log] {line_str}")
+            p.wait()
+        finally:
+            active_social_process = None
+        return "\n".join(stdout_lines).strip()
+
+    try:
+        # Step 1: Profile feed stream
+        dm._broadcast_log("social", f"[Step 1/2: Grid Feed] Connecting to profile feed stream for @{ig_username}...")
+        stdout_str = _execute_dl(f"https://www.instagram.com/{ig_username}/posts")
+        if stdout_str:
+            p_info, p_items = _parse_gallery_dl_output(stdout_str)
+            if p_items:
+                final_items.extend(p_items)
+            if p_info.get("fullname"):
+                post_info["fullname"] = p_info["fullname"]
+            if p_info.get("caption"):
+                post_info["caption"] = p_info["caption"]
+            if p_info.get("avatar_url"):
+                post_info["avatar_url"] = p_info["avatar_url"]
+
+        grid_imgs = sum(1 for it in final_items if it.get("type") == "image")
+        grid_vids = sum(1 for it in final_items if it.get("type") == "video")
+        dm._broadcast_log("social", f"📋 [Step 1 Complete] Feed scan found {len(final_items)} items ({grid_imgs} photos, {grid_vids} videos).")
+
+        # Step 2: Dedicated reels pass to catch unshared reels
+        dm._broadcast_log("social", f"[Step 2/2: Reels Tab] Scanning dedicated Reels tab for any additional unshared reels...")
+        try:
+            reels_str = _execute_dl(f"https://www.instagram.com/{ig_username}/reels")
+            added_reels = 0
+            if reels_str:
+                _, r_items = _parse_gallery_dl_output(reels_str)
+                if r_items:
+                    existing_urls = {it["url"] for it in final_items}
+                    existing_ids = {it.get("id") for it in final_items}
+                    existing_scs = {it.get("shortcode") for it in final_items if it.get("shortcode")}
+                    for r_it in r_items:
+                        sc = r_it.get("shortcode")
+                        if r_it["url"] not in existing_urls and r_it.get("id") not in existing_ids and (not sc or sc not in existing_scs):
+                            final_items.append(r_it)
+                            existing_urls.add(r_it["url"])
+                            if r_it.get("id"):
+                                existing_ids.add(r_it["id"])
+                            if sc:
+                                existing_scs.add(sc)
+                            added_reels += 1
+            if added_reels > 0:
+                dm._broadcast_log("social", f"🎬 [Step 2 Complete] Added {added_reels} additional unshared reels from Reels tab!")
+            else:
+                dm._broadcast_log("social", f"ℹ️ [Step 2 Complete] All {grid_vids} reels are already on the grid (no unshared reels found).")
+        except Exception as exc:
+            logger.debug(f"Optional reels pass ignored: {exc}")
+            dm._broadcast_log("social", f"ℹ️ [Step 2 Complete] Dedicated Reels tab scan finished (all {grid_vids} grid reels retained).")
+
+        tot_imgs = sum(1 for it in final_items if it.get("type") == "image")
+        tot_vids = sum(1 for it in final_items if it.get("type") == "video")
+        dm._broadcast_log("social", f"✅ [Done] Successfully scanned {len(final_items)} media items ({tot_imgs} photos, {tot_vids} videos) from @{ig_username}!")
+    except Exception as e:
+        logger.warning(f"Failed to fetch profile catalog: {e}")
+        dm._broadcast_log("social", f"⚠️ Profile scan error: {e}")
+
+    return post_info, final_items
+
+
 async def fetch_social(request: Request) -> JSONResponse:
     """GET /api/fetch-social — Fetch media info using gallery-dl with yt-dlp fallback."""
     import os
@@ -1043,130 +1246,38 @@ async def fetch_social(request: Request) -> JSONResponse:
         if is_direct_reels:
             primary_url = f"https://www.instagram.com/{ig_username}/reels"
             dm._broadcast_log("social", f"Connecting to Instagram Reels stream for @{ig_username}...")
-        elif is_direct_posts:
-            primary_url = f"https://www.instagram.com/{ig_username}/posts"
-            dm._broadcast_log("social", f"Connecting to Instagram Feed Posts stream for @{ig_username}...")
-        else:
-            primary_url = f"https://www.instagram.com/{ig_username}/posts"
-            dm._broadcast_log("social", f"[Step 1/2: Grid Feed] Connecting to profile feed stream for @{ig_username}...")
-
-        def _execute_dl(target_u: str):
-            global active_social_process
-            cmd = [
-                gallery_dl_bin,
-                "-j",
-                "--sleep-request", "1",
-            ]
-            custom_ext_dir = BUNDLE_DIR / "custom_extractors"
-            if custom_ext_dir.exists():
-                cmd.extend(["-X", str(custom_ext_dir)])
-            cmd.append(target_u)
-            if resolved_cookie:
-                cmd.extend(["--cookies", resolved_cookie])
-
-            p = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=creation_flags
-            )
-            active_social_process = p
-            stdout_lines = []
-            found_count = 0
-            is_reels_call = "/reels" in target_u
-            unit_label = "reels" if is_reels_call else "media items"
-            try:
-                for line in p.stdout:
-                    line_str = line.strip()
-                    if not line_str:
-                        continue
-                    stdout_lines.append(line_str)
-                    if '"post_id":' in line_str or '"post_shortcode":' in line_str or '"shortcode":' in line_str:
-                        found_count += 1
-                        if found_count == 1 or found_count % 25 == 0:
-                            dm._broadcast_log("social", f"📸 Scanned {found_count} {unit_label} from @{ig_username}...")
-                    elif not line_str.startswith(('"', '{', '}', ']')) and any(kw in line_str.lower() for kw in ("warning", "error", "429", "rate limit")):
-                        if "abortextraction" not in line_str.lower() and "login page" not in line_str.lower():
-                            dm._broadcast_log("social", f"[Log] {line_str}")
-                p.wait()
-            finally:
-                active_social_process = None
-            return "\n".join(stdout_lines).strip()
-
-        try:
             stdout_str = await asyncio.to_thread(_execute_dl, primary_url)
             if stdout_str:
                 p_info, p_items = _parse_gallery_dl_output(stdout_str)
-                if p_items:
-                    final_items.extend(p_items)
+                final_items.extend([it for it in p_items if it.get("type") == "video"])
+                if not post_info.get("fullname") and p_info.get("fullname"):
+                    post_info["fullname"] = p_info["fullname"]
+            if not final_items:
+                dm._broadcast_log("social", f"⚠️ Dedicated Reels tab restricted by Instagram API. Recovering all available reels from profile feed grid for @{ig_username}...")
+                fallback_str = await asyncio.to_thread(_execute_dl, f"https://www.instagram.com/{ig_username}/posts")
+                if fallback_str:
+                    fb_info, fb_items = _parse_gallery_dl_output(fallback_str)
+                    if fb_items:
+                        reels_only = [it for it in fb_items if it.get("type") == "video"]
+                        final_items.extend(reels_only)
+                    if not post_info.get("fullname") and fb_info.get("fullname"):
+                        post_info["fullname"] = fb_info["fullname"]
+                dm._broadcast_log("social", f"✅ Recovered {len(final_items)} reels from profile feed grid!")
+        elif is_direct_posts:
+            primary_url = f"https://www.instagram.com/{ig_username}/posts"
+            dm._broadcast_log("social", f"Connecting to Instagram Feed Posts stream for @{ig_username}...")
+            stdout_str = await asyncio.to_thread(_execute_dl, primary_url)
+            if stdout_str:
+                p_info, p_items = _parse_gallery_dl_output(stdout_str)
+                final_items.extend(p_items)
                 if not post_info.get("fullname") and p_info.get("fullname"):
                     post_info["fullname"] = p_info["fullname"]
                 if not post_info.get("caption") and p_info.get("caption"):
                     post_info["caption"] = p_info["caption"]
-
-            grid_imgs = sum(1 for it in final_items if it.get("type") == "image")
-            grid_vids = sum(1 for it in final_items if it.get("type") == "video")
-
-            if not is_direct_reels and not is_direct_posts:
-                dm._broadcast_log("social", f"📋 [Step 1 Complete] Feed scan found {len(final_items)} items ({grid_imgs} photos, {grid_vids} videos).")
-
-            # If user explicitly gave /reels, but it was blocked by login redirect (0 items found):
-            # Fall back automatically to profile /posts so user NEVER gets 0 items, and filter ONLY to videos!
-            if is_direct_reels:
-                if not final_items:
-                    dm._broadcast_log("social", f"⚠️ Dedicated Reels tab restricted by Instagram API. Recovering all available reels from profile feed grid for @{ig_username}...")
-                    fallback_str = await asyncio.to_thread(_execute_dl, f"https://www.instagram.com/{ig_username}/posts")
-                    if fallback_str:
-                        fb_info, fb_items = _parse_gallery_dl_output(fallback_str)
-                        if fb_items:
-                            reels_only = [it for it in fb_items if it.get("type") == "video"]
-                            final_items.extend(reels_only)
-                        if not post_info.get("fullname") and fb_info.get("fullname"):
-                            post_info["fullname"] = fb_info["fullname"]
-                    dm._broadcast_log("social", f"✅ Recovered {len(final_items)} reels from profile feed grid!")
-                else:
-                    # Ensure only videos are presented for /reels
-                    final_items = [it for it in final_items if it.get("type") == "video"]
-
-            # Step 2: If user gave bare profile (not /posts and not /reels), scan dedicated reels pass to catch unshared reels
-            if not is_direct_reels and not is_direct_posts:
-                dm._broadcast_log("social", f"[Step 2/2: Reels Tab] Scanning dedicated Reels tab for any additional unshared reels...")
-                try:
-                    reels_str = await asyncio.to_thread(_execute_dl, f"https://www.instagram.com/{ig_username}/reels")
-                    added_reels = 0
-                    if reels_str:
-                        _, r_items = _parse_gallery_dl_output(reels_str)
-                        if r_items:
-                            existing_urls = {it["url"] for it in final_items}
-                            existing_ids = {it.get("id") for it in final_items}
-                            existing_scs = {it.get("shortcode") for it in final_items if it.get("shortcode")}
-                            for r_it in r_items:
-                                sc = r_it.get("shortcode")
-                                if r_it["url"] not in existing_urls and r_it.get("id") not in existing_ids and (not sc or sc not in existing_scs):
-                                    final_items.append(r_it)
-                                    existing_urls.add(r_it["url"])
-                                    if r_it.get("id"):
-                                        existing_ids.add(r_it["id"])
-                                    if sc:
-                                        existing_scs.add(sc)
-                                    added_reels += 1
-                    if added_reels > 0:
-                        dm._broadcast_log("social", f"🎬 [Step 2 Complete] Added {added_reels} additional unshared reels from Reels tab!")
-                    else:
-                        dm._broadcast_log("social", f"ℹ️ [Step 2 Complete] All {grid_vids} reels are already on the grid (no unshared reels found).")
-                except Exception as exc:
-                    logger.debug(f"Optional reels pass ignored: {exc}")
-                    dm._broadcast_log("social", f"ℹ️ [Step 2 Complete] Dedicated Reels tab scan finished (all {grid_vids} grid reels retained).")
-
-            tot_imgs = sum(1 for it in final_items if it.get("type") == "image")
-            tot_vids = sum(1 for it in final_items if it.get("type") == "video")
-            dm._broadcast_log("social", f"✅ [Done] Successfully scanned {len(final_items)} media items ({tot_imgs} photos, {tot_vids} videos) from @{ig_username}!")
-        except Exception as e:
-            logger.warning(f"Failed to fetch posts: {e}")
-            dm._broadcast_log("social", f"⚠️ Profile scan error: {e}")
+        else:
+            cat_info, cat_items = await asyncio.to_thread(_scan_instagram_profile_catalog, dm, ig_username, cookie_file)
+            post_info.update(cat_info)
+            final_items.extend(cat_items)
 
         # If zero media items found from posts/reels, offer HD avatar as fallback item
         if not final_items and post_info.get("avatar_url"):
@@ -1279,7 +1390,7 @@ def _execute_download_social(
     base_out_path = Path(chosen_out).resolve()
     target_out_path = base_out_path
 
-    clean_creator = "".join(c for c in (creator or "") if c.isalnum() or c in ("_", "-")).strip()
+    clean_creator = "".join(c for c in (creator or "") if c.isalnum() or c in (".", "_", "-")).strip().rstrip(".")
     clean_cap = "".join(c for c in (caption or "") if c.isalnum() or c in (" ", "_", "-")).strip().replace(" ", "_")[:32]
     plat_tag = (platform or "Social").capitalize()
 
@@ -1317,16 +1428,22 @@ def _execute_download_social(
         "Accept": "*/*",
     }
 
-    for i, url in enumerate(urls):
+    def _process_single_social_item(i: int, item_data: Any) -> tuple[bool, str | None]:
         task_id = f"soc_{uuid.uuid4().hex[:8]}"
         try:
+            url = item_data if isinstance(item_data, str) else (item_data.get("url") or "")
+            item_caption = caption or (item_data.get("caption") if isinstance(item_data, dict) else "")
+            item_shortcode = (item_data.get("shortcode") if isinstance(item_data, dict) else "")
+            item_id = (item_data.get("id") if isinstance(item_data, dict) else "")
+            slide_idx = (item_data.get("slide_index") if isinstance(item_data, dict) else (i + 1))
+
             clean_url_check = url.lower().split("?")[0]
             is_ig_page_url = "instagram.com/" in clean_url_check and any(f"/{seg}/" in clean_url_check or clean_url_check.endswith(f"/{seg}") for seg in ("reel", "reels", "p", "tv"))
 
             # Safeguard: Never save raw HTML webpage URLs as images or media
             if "instagram.com/" in clean_url_check and not is_ig_page_url and not any(cdn in clean_url_check for cdn in ("fbcdn.net", "cdninstagram.com", ".mp4", ".jpg", ".webp")):
                 dm._broadcast_log("social", f"[{i+1}/{len(urls)}] Skipping non-media page URL: {url}")
-                continue
+                return False, None
 
             parsed_url = Path(url.split("?")[0])
             url_lower = parsed_url.name.lower()
@@ -1347,7 +1464,7 @@ def _execute_download_social(
                     target_suffix = ".jpg"
 
             # Respective file type subfolder organization
-            if "hd_profile_picture" in (caption or "") or "avatar" in url.lower():
+            if "hd_profile_picture" in (item_caption or caption or "") or "avatar" in url.lower():
                 type_subfolder = "avatar"
             elif audio_only:
                 type_subfolder = "audio"
@@ -1371,12 +1488,17 @@ def _execute_download_social(
             name_parts = [plat_tag]
             if clean_creator:
                 name_parts.append(clean_creator)
-            if "hd_profile_picture" in (caption or ""):
+            if "hd_profile_picture" in (item_caption or caption or ""):
                 name_parts.append("hd_profile_picture")
+            elif item_shortcode:
+                name_parts.append(item_shortcode)
+                if slide_idx:
+                    name_parts.append(str(slide_idx))
             else:
-                if clean_cap:
-                    name_parts.append(clean_cap)
-                if len(urls) > 1 or not clean_cap:
+                item_clean_cap = "".join(c for c in (item_caption or clean_cap or "") if c.isalnum() or c in (" ", "_", "-")).strip().replace(" ", "_")[:32]
+                if item_clean_cap:
+                    name_parts.append(item_clean_cap)
+                if len(urls) > 1 or not item_clean_cap:
                     name_parts.append(f"{i+1}")
 
             final_filename = f"{'_'.join(name_parts)}{target_suffix}"
@@ -1401,21 +1523,46 @@ def _execute_download_social(
             )
             update_status(task_id, "downloading")
 
-            dm._broadcast_log("social", f"[{i+1}/{len(urls)}] Downloading to {type_subfolder}/: {final_filename}")
+            dm._broadcast_log("social", f"[{i+1}/{len(urls)}] ⬇️ Downloading to {type_subfolder}/: {final_filename}")
+
+            def _mark_done(f_path: Path, t_sz: int, f_type: str):
+                update_download_completed(
+                    task_id,
+                    str(f_path.resolve()),
+                    f_path.name,
+                    t_sz,
+                    thumbnail=f"/api/history/thumbnail/{task_id}",
+                    batch_id=batch_id,
+                    batch_title=batch_title,
+                )
+                if clean_creator and (item_id or item_shortcode):
+                    from database import archive_media
+                    arch_key = item_id or item_shortcode or url
+                    archive_media(clean_creator, str(arch_key), url, item_caption)
+                if hasattr(dm, "broadcast_custom_progress"):
+                    dm.broadcast_custom_progress({
+                        "type": "progress", "task_id": task_id, "filename": f_path.name,
+                        "status": "completed", "progress": 100.0, "downloaded_bytes": t_sz, "total_bytes": t_sz,
+                        "speed": "Done", "eta": "", "format_type": f_type
+                    })
+
+            dm._broadcast_log("social", f"[{i+1}/{len(urls)}] ⬇️ Downloading to {type_subfolder}/: {final_filename}")
 
             creation_flags = 0x08000000 if os.name == "nt" else 0
 
-            # Direct download for Instagram Reel / Post URLs via yt-dlp (bypasses blocked info endpoints)
+            # Direct download for Instagram Reel / Post URLs via yt-dlp with multi-fragment speedup
             if is_ig_page_url:
                 dm._broadcast_log("social", f"[{i+1}/{len(urls)}] [yt-dlp] Downloading Instagram Reel: {final_filename}")
                 ydl_cmd = [
                     YTDLP_PATH,
                     "--no-cookies",
                     "--no-warnings",
+                    "--concurrent-fragments", "4",
+                    "--embed-metadata",
                     "-o", str(final_file),
                 ]
                 if audio_only:
-                    ydl_cmd.extend(["-x", "--audio-format", audio_format.lower()])
+                    ydl_cmd.extend(["-x", "--audio-format", audio_format.lower(), "--audio-quality", "0", "--embed-thumbnail"])
                 else:
                     ydl_cmd.extend(["-f", "bv*+ba/b", "--merge-output-format", video_format.lower()])
                 ydl_cmd.append(url)
@@ -1429,29 +1576,15 @@ def _execute_download_social(
                     creationflags=creation_flags
                 )
                 if res.returncode == 0 and final_file.exists():
-                    downloaded += 1
-                    update_download_completed(task_id, file_path=str(final_file.resolve()))
-                    dm._broadcast_log("social", f"[{i+1}/{len(urls)}] Download complete: {final_filename}")
-                    if hasattr(dm, "broadcast_custom_progress"):
-                        dm.broadcast_custom_progress({
-                            "type": "progress",
-                            "task_id": task_id,
-                            "filename": final_filename,
-                            "status": "completed",
-                            "progress": 100.0,
-                            "downloaded_bytes": final_file.stat().st_size,
-                            "total_bytes": final_file.stat().st_size,
-                            "speed": "Done",
-                            "eta": "",
-                            "format_type": "audio" if audio_only else "video",
-                        })
-                    continue
+                    _mark_done(final_file, final_file.stat().st_size, "audio" if audio_only else "video")
+                    dm._broadcast_log("social", f"[{i+1}/{len(urls)}] ✅ Download complete: {final_filename}")
+                    return True, None
                 else:
                     err_txt = (res.stderr or res.stdout or "yt-dlp download failed").strip()
-                    dm._broadcast_log("social", f"[{i+1}/{len(urls)}] Warning: Failed to download reel: {err_txt[:120]}")
-                    errors.append(f"{url}: {err_txt[:120]}")
-                    continue
+                    dm._broadcast_log("social", f"[{i+1}/{len(urls)}] ⚠️ Failed to download reel: {err_txt[:120]}")
+                    return False, f"{url}: {err_txt[:120]}"
 
+            # Direct stream copying
             def _stream_copy(resp, dest):
                 tot_hdr = resp.getheader("Content-Length")
                 tot = int(tot_hdr) if (tot_hdr and tot_hdr.isdigit()) else 0
@@ -1465,7 +1598,7 @@ def _execute_download_social(
                     dest.write(ch)
                     dl += len(ch)
                     now_t = time.time()
-                    if (now_t - last_b >= 0.12) or (tot > 0 and dl >= tot):
+                    if (now_t - last_b >= 0.15) or (tot > 0 and dl >= tot):
                         last_b = now_t
                         elap = max(0.001, now_t - t0)
                         sp_val = dl / elap
@@ -1500,7 +1633,7 @@ def _execute_download_social(
                     dm._broadcast_log("social", f"[FFmpeg] Extracting audio to {final_filename}...")
                     ffmpeg_cmd = [str(FFMPEG_PATH), "-y", "-i", str(native_file), "-vn"]
                     if audio_format.lower() == "mp3":
-                        ffmpeg_cmd.extend(["-c:a", "libmp3lame", "-q:a", "0"])
+                        ffmpeg_cmd.extend(["-c:a", "libmp3lame", "-q:a", "0", "-id3v2_version", "3"])
                     elif audio_format.lower() in ("m4a", "aac"):
                         ffmpeg_cmd.extend(["-c:a", "aac", "-b:a", "256k"])
                     ffmpeg_cmd.append(str(final_file))
@@ -1520,74 +1653,47 @@ def _execute_download_social(
                     pass
 
                 if conv.returncode == 0 and final_file.exists():
-                    downloaded += 1
-                    sz = final_file.stat().st_size
-                    update_download_completed(
-                        task_id, 
-                        str(final_file.resolve()), 
-                        final_file.name, 
-                        sz, 
-                        thumbnail=f"/api/history/thumbnail/{task_id}",
-                        batch_id=batch_id,
-                        batch_title=batch_title
-                    )
-                    if hasattr(dm, "broadcast_custom_progress"):
-                        dm.broadcast_custom_progress({
-                            "type": "progress", "task_id": task_id, "filename": final_file.name,
-                            "status": "completed", "progress": 100.0, "downloaded_bytes": sz, "total_bytes": sz,
-                            "speed": "", "eta": "", "format_type": "video" if final_file.name.endswith((".mp4", ".mov", ".mkv", ".webm")) else "image"
-                        })
+                    _mark_done(final_file, final_file.stat().st_size, "video" if final_file.name.endswith((".mp4", ".mov", ".mkv", ".webm")) else "image")
+                    return True, None
                 else:
                     fallback_file = dest_dir / f"social_{time.strftime('%Y%m%d_%H%M%S')}_{i+1}{native_suffix}"
                     req = urllib.request.Request(url, headers=headers)
                     with urllib.request.urlopen(req, timeout=30) as response, open(fallback_file, "wb") as out_file:
                         _stream_copy(response, out_file)
-                    downloaded += 1
-                    sz = fallback_file.stat().st_size
-                    update_download_completed(
-                        task_id, 
-                        str(fallback_file.resolve()), 
-                        fallback_file.name, 
-                        sz, 
-                        thumbnail=f"/api/history/thumbnail/{task_id}",
-                        batch_id=batch_id,
-                        batch_title=batch_title
-                    )
-                    if hasattr(dm, "broadcast_custom_progress"):
-                        dm.broadcast_custom_progress({
-                            "type": "progress", "task_id": task_id, "filename": fallback_file.name,
-                            "status": "completed", "progress": 100.0, "downloaded_bytes": sz, "total_bytes": sz,
-                            "speed": "", "eta": "", "format_type": "video" if fallback_file.name.endswith((".mp4", ".mov", ".mkv", ".webm")) else "image"
-                        })
+                    _mark_done(fallback_file, fallback_file.stat().st_size, "video" if fallback_file.name.endswith((".mp4", ".mov", ".mkv", ".webm")) else "image")
+                    return True, None
             else:
                 req = urllib.request.Request(url, headers=headers)
                 with urllib.request.urlopen(req, timeout=30) as response, open(final_file, "wb") as out_file:
                     _stream_copy(response, out_file)
-                downloaded += 1
-                sz = final_file.stat().st_size
-                update_download_completed(
-                    task_id, 
-                    str(final_file.resolve()), 
-                    final_file.name, 
-                    sz, 
-                    thumbnail=f"/api/history/thumbnail/{task_id}",
-                    batch_id=batch_id,
-                    batch_title=batch_title
-                )
-                if hasattr(dm, "broadcast_custom_progress"):
-                    dm.broadcast_custom_progress({
-                        "type": "progress", "task_id": task_id, "filename": final_file.name,
-                        "status": "completed", "progress": 100.0, "downloaded_bytes": sz, "total_bytes": sz,
-                        "speed": "", "eta": "", "format_type": "video" if final_file.name.endswith((".mp4", ".mov", ".mkv", ".webm")) else "image"
-                    })
+                _mark_done(final_file, final_file.stat().st_size, "video" if final_file.name.endswith((".mp4", ".mov", ".mkv", ".webm")) else "image")
+                return True, None
 
         except Exception as e:
             err_str = f"Item {i+1} failed: {str(e)}"
-            errors.append(err_str)
             dm._broadcast_log("social", f"[Error] {err_str}")
             update_status(task_id, "failed")
+            return False, err_str
 
-    dm._broadcast_log("social", f"Batch download finished. Successfully saved {downloaded}/{len(urls)} items.")
+    import concurrent.futures
+    max_workers = min(4, len(urls)) if len(urls) > 0 else 1
+    dm._broadcast_log("social", f"⚡ Parallel Engine Active: Downloading {len(urls)} items with {max_workers} simultaneous workers...")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_process_single_social_item, i, u): (i, u) for i, u in enumerate(urls)}
+        for fut in concurrent.futures.as_completed(futures):
+            i, u = futures[fut]
+            try:
+                ok, err = fut.result()
+                if ok:
+                    downloaded += 1
+                elif err:
+                    errors.append(err)
+            except Exception as e:
+                err_str = f"Item {i+1} error: {e}"
+                errors.append(err_str)
+
+    dm._broadcast_log("social", f"✅ Batch download complete. Successfully saved {downloaded}/{len(urls)} items.")
     return downloaded, errors
 
 
@@ -1694,9 +1800,48 @@ async def fetch_info(request: Request) -> JSONResponse:
             timeout=30,
             creationflags=SUBPROCESS_FLAGS,
         )
+
+        # Automatic fallback if stale/invalid cookie triggered a bot or auth error
+        if result.returncode != 0 and resolved_cookie:
+            err_text = result.stderr or ""
+            err_lower = err_text.lower()
+            if any(kw in err_lower for kw in ["bot", "cookie", "login_required", "sign in", "403", "forbidden"]):
+                logger.warning(f"Metadata fetch with cookies failed; retrying without cookies...")
+                fallback_cmd = [
+                    YTDLP_PATH,
+                    "--dump-json",
+                    "--no-download",
+                    "--no-playlist",
+                    "--no-warnings",
+                ]
+                if referer:
+                    fallback_cmd.extend(["--referer", referer.strip()])
+                fallback_cmd.append(url)
+                fallback_result = await asyncio.to_thread(
+                    subprocess.run,
+                    fallback_cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=30,
+                    creationflags=SUBPROCESS_FLAGS,
+                )
+                if fallback_result.returncode == 0:
+                    result = fallback_result
+
         if result.returncode != 0:
             stderr = result.stderr.strip() if result.stderr else "Unknown error"
-            return _error(f"Failed to fetch metadata: {stderr}", status=500)
+            err_lower = stderr.lower()
+            if any(kw in err_lower for kw in ["sign in to confirm you", "confirm you're not a bot", "login_required"]):
+                clean_err = "YouTube bot verification required. Configured cookies may be expired or missing LOGIN_INFO. Please export a fresh cookies.txt from youtube.com while logged in."
+            elif "private video" in err_lower:
+                clean_err = "This video is private. You must sign in with an account that has permission to view it."
+            elif "join this channel" in err_lower or "members-only" in err_lower:
+                clean_err = "This is a members-only video. You must sign in with a subscribed account."
+            else:
+                clean_err = stderr
+            return _error(f"Failed to fetch metadata: {clean_err}", status=500)
         
         data = json.loads(result.stdout)
         
@@ -2157,6 +2302,12 @@ async def update_settings(request: Request) -> JSONResponse:
     if "gpu_acceleration" in body:
         to_save["gpu_acceleration"] = bool(body["gpu_acceleration"])
         changed.append("gpu_acceleration")
+    if "auto_sync_interval_hours" in body:
+        try:
+            to_save["auto_sync_interval_hours"] = int(body["auto_sync_interval_hours"])
+            changed.append(f"auto_sync_interval_hours={body['auto_sync_interval_hours']}")
+        except Exception:
+            pass
 
     if to_save:
         save_settings(to_save)
@@ -2689,6 +2840,48 @@ async def delete_history_item_endpoint(request: Request) -> JSONResponse:
 
 # ── Creator Watchlist & Auto-Inventory Endpoints ──────────────────
 
+def _clean_creator_input(raw: str) -> tuple[str, str]:
+    """
+    Extracts (platform, clean_username) from user input or watchlist item.
+    Handles:
+    - Full URLs: https://www.instagram.com/hadiyeah.1/ -> ('instagram', 'hadiyeah.1')
+    - Post/Reels URLs: https://www.instagram.com/hadiyeah.1/reels/?igsh=... -> ('instagram', 'hadiyeah.1')
+    - TikTok URLs: https://www.tiktok.com/@creator -> ('tiktok', 'creator')
+    - YouTube URLs: https://www.youtube.com/@channel -> ('youtube', 'channel')
+    - Plain handles: @hadiyeah.1 or hadiyeah.1 -> ('instagram', 'hadiyeah.1')
+    """
+    s = (raw or "").strip()
+    if not s:
+        return "instagram", ""
+    s = s.split("?")[0].split("#")[0].rstrip("/")
+    lower_s = s.lower()
+
+    platform = "instagram"
+    username = s
+
+    if "instagram.com/" in lower_s:
+        platform = "instagram"
+        after = lower_s.split("instagram.com/")[1]
+        parts = [p for p in s[len(s) - len(after):].split("/") if p and p.lower() not in ("posts", "reels", "tagged", "channel", "stories", "p")]
+        if parts:
+            username = parts[0]
+    elif "tiktok.com/" in lower_s:
+        platform = "tiktok"
+        after = lower_s.split("tiktok.com/")[1]
+        parts = [p for p in s[len(s) - len(after):].split("/") if p and not p.lower().startswith("video")]
+        if parts:
+            username = parts[0]
+    elif "youtube.com/" in lower_s:
+        platform = "youtube"
+        after = lower_s.split("youtube.com/")[1]
+        parts = [p for p in s[len(s) - len(after):].split("/") if p and p.lower() not in ("videos", "shorts", "streams", "playlists")]
+        if parts:
+            username = parts[0]
+
+    clean = username.strip().strip("'\"").lstrip("@")
+    return platform, clean
+
+
 def _execute_inventory_sync(dm, watchlist: list[str]) -> dict[str, Any]:
     from database import is_media_archived, archive_media
     cookie = load_settings().get("cookie_file")
@@ -2700,84 +2893,66 @@ def _execute_inventory_sync(dm, watchlist: list[str]) -> dict[str, Any]:
     total_new = 0
     total_skipped = 0
 
+    clean_creators: list[tuple[str, str]] = []
     for creator in watchlist:
-        creator_clean = creator.strip().lstrip("@")
-        if not creator_clean:
-            continue
-        dm._broadcast_log("social", f"[Inventory] 🔍 Scanning creator @{creator_clean}...")
-        
-        # 1. Profile feed posts
-        cmd = [gallery_dl_bin, "--range", "1-100", "-j"]
-        if custom_ext_dir.exists():
-            cmd.extend(["-X", str(custom_ext_dir)])
-        cmd.append(f"https://www.instagram.com/{creator_clean}/posts")
-        if resolved_cookie:
-            cmd.extend(["--cookies", resolved_cookie])
+        raw_name = creator if isinstance(creator, str) else creator.get("username", "")
+        plat, c_clean = _clean_creator_input(raw_name)
+        if c_clean and (plat, c_clean) not in clean_creators:
+            clean_creators.append((plat, c_clean))
 
-        try:
-            items = []
-            res = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=60, creationflags=creation_flags)
-            if res.returncode == 0 and res.stdout:
-                _, p_items = _parse_gallery_dl_output(res.stdout)
-                if p_items:
-                    items.extend(p_items)
+    for platform, creator_clean in clean_creators:
+        dm._broadcast_log("social", f"[Inventory] 🔍 Scanning creator @{creator_clean} ({platform})...")
+        items = []
 
-            # 2. Check dedicated Reels tab for any additional unshared reels
+        if platform == "instagram":
+            p_info, items = _scan_instagram_profile_catalog(dm, creator_clean, cookie)
+
+        elif platform == "tiktok":
+            cmd = [gallery_dl_bin, "--range", "1-100", "-j", f"https://www.tiktok.com/@{creator_clean}"]
+            if resolved_cookie:
+                cmd.extend(["--cookies", resolved_cookie])
             try:
-                r_cmd = [gallery_dl_bin, "--range", "1-100", "-j"]
-                if custom_ext_dir.exists():
-                    r_cmd.extend(["-X", str(custom_ext_dir)])
-                r_cmd.append(f"https://www.instagram.com/{creator_clean}/reels")
-                if resolved_cookie:
-                    r_cmd.extend(["--cookies", resolved_cookie])
-                
-                r_res = subprocess.run(r_cmd, capture_output=True, text=True, errors="replace", timeout=60, creationflags=creation_flags)
-                if r_res.returncode == 0 and r_res.stdout:
-                    _, r_items = _parse_gallery_dl_output(r_res.stdout)
-                    if r_items:
-                        seen_keys = {it.get("id") or it.get("shortcode") or it.get("url") for it in items}
-                        for r_it in r_items:
-                            rkey = r_it.get("id") or r_it.get("shortcode") or r_it.get("url")
-                            if rkey not in seen_keys:
-                                items.append(r_it)
-                                seen_keys.add(rkey)
-            except Exception as re_err:
-                logger.warning(f"Reels tab sync scan failed for @{creator_clean}: {re_err}")
+                res = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=60, creationflags=creation_flags)
+                if res.returncode == 0 and res.stdout:
+                    _, p_items = _parse_gallery_dl_output(res.stdout)
+                    if p_items:
+                        items.extend(p_items)
+            except Exception as te:
+                dm._broadcast_log("social", f"[Inventory] ⚠️ TikTok scan notice for @{creator_clean}: {te}")
 
-            if items:
-                new_urls = []
-                for it in items:
-                    m_id = str(it.get("shortcode") or it.get("id") or it.get("media_id") or it.get("url") or "")
-                    if not m_id:
-                        continue
-                    if is_media_archived(creator_clean, m_id):
-                        total_skipped += 1
-                    else:
-                        new_urls.append(it.get("url"))
-                        archive_media(creator_clean, m_id, it.get("url", ""), it.get("caption", ""))
-                        total_new += 1
-
-                if new_urls:
-                    dm._broadcast_log("social", f"[Inventory] ⚡ Found {len(new_urls)} NEW items (posts/reels) for @{creator_clean}! Queuing downloads...")
-                    settings = load_settings()
-                    out_dir = settings.get("social_output_dir") or settings.get("output_dir") or str(DEFAULT_DOWNLOAD_DIR)
-                    _execute_download_social(
-                        dm,
-                        new_urls,
-                        output_dir=out_dir,
-                        creator=creator_clean,
-                        organize_subfolder=True,
-                        platform="instagram"
-                    )
+        if items:
+            new_items = []
+            for it in items:
+                m_id = str(it.get("id") or it.get("shortcode") or it.get("media_id") or it.get("url") or "")
+                if not m_id:
+                    continue
+                if is_media_archived(creator_clean, m_id):
+                    total_skipped += 1
                 else:
-                    dm._broadcast_log("social", f"[Inventory] ✅ @{creator_clean} is up to date (no new posts or reels).")
-        except Exception as e:
-            dm._broadcast_log("social", f"[Inventory] ❌ Error scanning @{creator_clean}: {e}")
+                    new_items.append(it)
+                    total_new += 1
+
+            if new_items:
+                dm._broadcast_log("social", f"[Inventory] ⚡ Found {len(new_items)} NEW items (posts/reels) for @{creator_clean}! Queuing downloads...")
+                settings = load_settings()
+                out_dir = settings.get("social_output_dir") or settings.get("output_dir") or str(DEFAULT_DOWNLOAD_DIR)
+                _execute_download_social(
+                    dm,
+                    new_items,
+                    output_dir=out_dir,
+                    creator=creator_clean,
+                    organize_subfolder=True,
+                    platform=platform
+                )
+            else:
+                dm._broadcast_log("social", f"[Inventory] ✅ @{creator_clean} is up to date (no new posts or reels).")
+        else:
+            dm._broadcast_log("social", f"[Inventory] ⚠️ No items found for @{creator_clean}. Check cookies or profile accessibility.")
 
     dm._broadcast_log("social", f"⚡ Inventory Sync Complete: {total_new} new items downloaded, {total_skipped} skipped (already saved).")
     return {
         "success": True,
-        "scanned_creators": len(watchlist),
+        "scanned_creators": len(clean_creators),
         "downloaded_count": total_new,
         "new_items": total_new,
         "skipped_count": total_skipped,
@@ -2791,8 +2966,13 @@ async def list_inventory_endpoint(request: Request) -> JSONResponse:
     settings = load_settings()
     watchlist = settings.get("creator_watchlist", [])
     results = []
+    seen = set()
     for item in watchlist:
-        c_name = item if isinstance(item, str) else item.get("username", "")
+        raw_name = item if isinstance(item, str) else item.get("username", "")
+        _, c_name = _clean_creator_input(raw_name)
+        if not c_name or c_name in seen:
+            continue
+        seen.add(c_name)
         count = get_archived_count(c_name)
         results.append({
             "username": c_name,
@@ -2807,15 +2987,21 @@ async def add_inventory_endpoint(request: Request) -> JSONResponse:
         body = await request.json()
     except Exception:
         return _error("Invalid JSON", status=400)
-    creator = (body.get("username") or body.get("creator") or "").strip().lstrip("@")
+    raw = (body.get("username") or body.get("creator") or "").strip()
+    _, creator = _clean_creator_input(raw)
     if not creator:
         return _error("Creator username is required", status=400)
     settings = load_settings()
     watchlist = settings.get("creator_watchlist", [])
-    if creator not in watchlist:
-        watchlist.append(creator)
-        settings["creator_watchlist"] = watchlist
-        save_settings(settings)
+    norm_watchlist = []
+    for item in watchlist:
+        _, c = _clean_creator_input(item if isinstance(item, str) else item.get("username", ""))
+        if c and c not in norm_watchlist:
+            norm_watchlist.append(c)
+    if creator not in norm_watchlist:
+        norm_watchlist.append(creator)
+    settings["creator_watchlist"] = norm_watchlist
+    save_settings(settings)
     return JSONResponse({"success": True, "creator": creator})
 
 
@@ -2825,27 +3011,59 @@ async def remove_inventory_endpoint(request: Request) -> JSONResponse:
         body = await request.json()
     except Exception:
         return _error("Invalid JSON", status=400)
-    creator = (body.get("username") or body.get("creator") or "").strip().lstrip("@")
+    raw = (body.get("username") or body.get("creator") or "").strip()
+    _, creator = _clean_creator_input(raw)
     settings = load_settings()
     watchlist = settings.get("creator_watchlist", [])
-    if creator in watchlist:
-        watchlist.remove(creator)
-        settings["creator_watchlist"] = watchlist
-        save_settings(settings)
+    norm_watchlist = []
+    for item in watchlist:
+        _, c = _clean_creator_input(item if isinstance(item, str) else item.get("username", ""))
+        if c and c != creator and c not in norm_watchlist:
+            norm_watchlist.append(c)
+    settings["creator_watchlist"] = norm_watchlist
+    save_settings(settings)
     return JSONResponse({"success": True, "creator": creator})
 
 
+_inventory_sync_in_progress = False
+
 async def sync_inventory_endpoint(request: Request) -> JSONResponse:
     """POST /api/inventory/sync - Scan watchlist and download only newly posted items."""
+    global _inventory_sync_in_progress
     settings = load_settings()
     watchlist = settings.get("creator_watchlist", [])
     if not watchlist:
         return JSONResponse({"success": True, "message": "Watchlist is empty. Add creators in Settings.", "downloaded_count": 0, "skipped_count": 0, "scanned": 0, "new": 0})
 
+    if _inventory_sync_in_progress:
+        return JSONResponse({"success": True, "message": "Inventory sync is already running in background.", "downloaded_count": 0, "skipped_count": 0, "scanned": len(watchlist), "new": 0})
+
     dm = request.app.state.download_manager
-    dm._broadcast_log("social", f"⚡ Starting Inventory Sync for {len(watchlist)} creators...")
-    summary = await asyncio.to_thread(_execute_inventory_sync, dm, watchlist)
-    return JSONResponse(summary)
+    dm._broadcast_log("social", f"⚡ Starting Inventory Sync for {len(watchlist)} creator(s) in background...")
+
+    async def _run_sync_worker():
+        global _inventory_sync_in_progress
+        _inventory_sync_in_progress = True
+        try:
+            summary = await asyncio.to_thread(_execute_inventory_sync, dm, watchlist)
+            if hasattr(dm, "broadcast"):
+                dm.broadcast({
+                    "type": "inventory",
+                    "message": f"Sync completed! {summary.get('downloaded_count', 0)} new items downloaded, {summary.get('skipped_count', 0)} already archived."
+                })
+        except Exception as ex:
+            dm._broadcast_log("social", f"[Inventory] ❌ Sync error: {ex}")
+        finally:
+            _inventory_sync_in_progress = False
+
+    asyncio.create_task(_run_sync_worker())
+    return JSONResponse({
+        "success": True,
+        "message": f"Inventory sync started for {len(watchlist)} creator(s) in background.",
+        "scanned_creators": len(watchlist),
+        "downloaded_count": 0,
+        "skipped_count": 0
+    })
 
 
 # ── Windows Startup & In-App Updater Endpoints ────────────────────
@@ -3021,11 +3239,27 @@ def _get_history_thumb_cache() -> Path:
     return p
 
 
+_THUMB_RAM_CACHE: dict[str, tuple[bytes, str]] = {}
+_THUMB_RAM_CACHE_MAX = 200
+
+def _cache_thumb_bytes(tid: str, data: bytes, media_type: str):
+    if len(_THUMB_RAM_CACHE) >= _THUMB_RAM_CACHE_MAX:
+        keys = list(_THUMB_RAM_CACHE.keys())[:50]
+        for k in keys:
+            _THUMB_RAM_CACHE.pop(k, None)
+    _THUMB_RAM_CACHE[tid] = (data, media_type)
+
+
 async def get_history_thumbnail(request: Request) -> Response:
-    """GET /api/history/thumbnail/{task_id} — Serves thumbnail directly from downloaded media file."""
+    """GET /api/history/thumbnail/{task_id} — Serves thumbnail directly from downloaded media file with RAM cache."""
     task_id = request.path_params.get("task_id")
     if not task_id:
         return PlainTextResponse("Not Found", status_code=404)
+
+    # 0. Check in-memory RAM cache first (instant response, 0 disk I/O)
+    if task_id in _THUMB_RAM_CACHE:
+        c_bytes, c_type = _THUMB_RAM_CACHE[task_id]
+        return Response(content=c_bytes, media_type=c_type)
 
     from database import get_connection
     import sqlite3
@@ -3087,7 +3321,12 @@ async def get_history_thumbnail(request: Request) -> Response:
             # 1. Image files: serve the file directly
             if suf in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
                 media_type = "image/jpeg" if suf in (".jpg", ".jpeg") else f"image/{suf.replace('.', '')}"
-                return FileResponse(str(fp), media_type=media_type)
+                try:
+                    data = fp.read_bytes()
+                    _cache_thumb_bytes(task_id, data, media_type)
+                    return Response(content=data, media_type=media_type)
+                except Exception:
+                    return FileResponse(str(fp), media_type=media_type)
 
             # 2. Video files: generate 1-second frame thumbnail using ffmpeg
             if suf in (".mp4", ".mov", ".mkv", ".webm", ".avi", ".flv"):
@@ -3095,7 +3334,12 @@ async def get_history_thumbnail(request: Request) -> Response:
                     cache_dir = _get_history_thumb_cache()
                     cached_thumb = cache_dir / f"{task_id}.jpg"
                     if cached_thumb.exists() and cached_thumb.stat().st_size > 0:
-                        return FileResponse(str(cached_thumb), media_type="image/jpeg")
+                        try:
+                            data = cached_thumb.read_bytes()
+                            _cache_thumb_bytes(task_id, data, "image/jpeg")
+                            return Response(content=data, media_type="image/jpeg")
+                        except Exception:
+                            return FileResponse(str(cached_thumb), media_type="image/jpeg")
 
                     ff_cmd = [
                         str(FFMPEG_PATH), "-y",
@@ -3124,7 +3368,12 @@ async def get_history_thumbnail(request: Request) -> Response:
                         )
 
                     if res.returncode == 0 and cached_thumb.exists() and cached_thumb.stat().st_size > 0:
-                        return FileResponse(str(cached_thumb), media_type="image/jpeg")
+                        try:
+                            data = cached_thumb.read_bytes()
+                            _cache_thumb_bytes(task_id, data, "image/jpeg")
+                            return Response(content=data, media_type="image/jpeg")
+                        except Exception:
+                            return FileResponse(str(cached_thumb), media_type="image/jpeg")
                 except Exception as e:
                     logger.warning(f"Failed to generate video thumbnail for {fp.name}: {e}")
 
